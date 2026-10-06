@@ -1,0 +1,7 @@
+{
+  "input_dir": "/taiga/huseyin/1000m/E_200_2000TeV/test_3PeV",
+  "runtime_sha256": "e84966b207aaf1d615a1aadeaca29ab6d6cc4e0a6cfd382c47c579743b0f3cc7",
+  "radius": 100,
+  "parameters": "parameters.txt",
+  "suffix": "_feb"
+}

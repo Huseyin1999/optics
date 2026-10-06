@@ -1,0 +1,21 @@
+universe = vanilla
+executable = /bin/bash
+transfer_executable = False
+arguments = simulate_one.sh $(input_name) $(parameters_name)
+runtime = runtime.tar.gz
+parameters_name = parameters.txt
+transfer_input_files = simulate_one.sh,$(runtime),$(input_file)
+transfer_output_files = result.bin,result_A_sums2,result.done
+transfer_output_remaps = "result.bin=$(output_prefix)$(output_suffix);result_A_sums2=$(output_prefix)_A_sums2;result.done=$(output_prefix).done"
+jobs_file = simulate_jobs.tsv
+should_transfer_files = YES
+when_to_transfer_output = ON_EXIT
+log = logs/simulate/$(ClusterId)-$(ProcId).log
+output = logs/simulate/$(ClusterId)-$(ProcId).out
+error = logs/simulate/$(ClusterId)-$(ProcId).err
+accounting_group = taiga
+request_cpus = 1
+request_memory = 8GB
+request_disk = 4GB
+on_exit_hold = (ExitBySignal == True) || (ExitCode != 0)
+queue input_file,input_name,output_prefix,output_suffix from $(jobs_file)

@@ -1,0 +1,27 @@
+universe = vanilla
++SingularityImage = "/cvmfs/containers.jinr.ru/taiga/containers/taiga_corsika:el9"
+
+executable = /bin/bash
+arguments = simulate_one.sh "$(input_file)" "$(output_prefix)" "$(optics_executable)" "$(parameters)"
+transfer_executable = False
+
+optics_executable = /CHANGE/ME/optics/condor_pipeline/TAIGA_optics_file
+parameters = /CHANGE/ME/optics/TAIGA_optics/parameters.txt
+jobs_file = simulate_jobs.tsv
+
+should_transfer_files = YES
+transfer_input_files = simulate_one.sh
+transfer_output_files =
+when_to_transfer_output = ON_EXIT
+
+log = logs/simulate/job-$(ClusterId)-$(ProcId).log
+output = logs/simulate/job-$(ClusterId)-$(ProcId).out
+error = logs/simulate/job-$(ClusterId)-$(ProcId).err
+
+accounting_group = taiga
+request_cpus = 1
+request_memory = 8GB
+request_disk = 4GB
+on_exit_hold = (ExitBySignal == True) || (ExitCode != 0)
+
+queue input_file, output_prefix from $(jobs_file)

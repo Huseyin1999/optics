@@ -1,0 +1,20 @@
+/media/husein/Work_Hard/TAIGA/optics/post_io_gamma0/%d_iact_split_i
+/media/husein/Work_Hard/TAIGA/optics/post_TAIGA_optics_gamma0/bpe%d_%d_d%c%.1f_md5
+/taiga%d
+0 1 5.0 0 //N_start, N_runs, da, source_model
+25 25 10 //theta_hiscore, phi_hiscore, hs_trigger
+atm_trans_0_1_10_0_0_0.dat
+0 1.13 0.0 10.0 1200.0 9.69627e-5 //wobble, wobble_r, wobble_phi, wobble_rate, wobble_dt, wobble_frame_rotation_speed
+0
+//291 //gamma
+//479 //muons
+//503 //500Tev gamma
+//435 455  //He
+//447 448 449 450 451 452 453 454 //gamma at different fixed energies, theta30-40
+//4000 4001 4002 4003 4004 4005 4006 4007 4008 4009 4010 4011 4012 4013 4014 4015 //zenith angles
+//120 121 122
+//87 88 90 91
+//101 102 103 104 //He, O
+//69 70 80 82 86 89 92 95 97 99 //gamma
+//71 72 81 83 87 88 90 91 93 96 98 100 101 102 //hadrons
+//87 88 90 91 98 100 101 102

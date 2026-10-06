@@ -1,0 +1,20 @@
+universe = vanilla
+executable = /bin/bash
+transfer_executable = False
+arguments = test_native_one.sh
+should_transfer_files = YES
+transfer_input_files = test_native_one.sh,../stage2/simulate_one.sh,../stage2/TAIGA_optics_file,../stage2/assets,../converted/10_iact_split_i,libgsl.so.25,libgslcblas.so.0
+transfer_output_files = result.bin,result_A_sums2,result.done
+transfer_output_remaps = "result.bin=results/10_iact_split_feb;result_A_sums2=results/10_iact_split_A_sums2;result.done=results/10_iact_split.done"
+when_to_transfer_output = ON_EXIT
+log = logs/native-$(ClusterId)-$(ProcId).log
+output = logs/native-$(ClusterId)-$(ProcId).out
+error = logs/native-$(ClusterId)-$(ProcId).err
+stream_output = True
+stream_error = True
+accounting_group = taiga
+request_cpus = 1
+request_memory = 8GB
+request_disk = 4GB
+on_exit_hold = (ExitBySignal == True) || (ExitCode != 0)
+queue 1

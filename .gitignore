@@ -1,0 +1,6 @@
+*.root
+*.csv
+*.dat
+build/
+__pycache__/
+*.zip
