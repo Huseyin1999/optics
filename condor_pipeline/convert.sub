@@ -1,28 +1,21 @@
 universe = vanilla
-+SingularityImage = "/cvmfs/containers.jinr.ru/taiga/containers/taiga_corsika:el9"
-
 executable = /bin/bash
-arguments = convert_one.sh $(input_file) $(output_prefix) $(hybrid) $(radius) $(corsika_dir)
 transfer_executable = False
-
-hybrid = /taiga/huseyin/optics/io_taiga/hybrid
-corsika_dir = /taiga/huseyin/optics/io_taiga
+arguments = convert_one.sh $(input_name) $(radius)
+runtime = runtime.tar.gz
 radius = 100
+transfer_input_files = convert_one.sh,$(runtime),$(input_file)
+transfer_output_files = result_i,result_t,result.done
+transfer_output_remaps = "result_i=$(output_prefix)_i;result_t=$(output_prefix)_t;result.done=$(output_prefix).done"
 jobs_file = convert_jobs.tsv
-
 should_transfer_files = YES
-transfer_input_files = convert_one.sh
-transfer_output_files = /taiga/huseyin/optics/post_io
 when_to_transfer_output = ON_EXIT
-
-log = logs/convert/job-$(ClusterId)-$(ProcId).log
-output = logs/convert/job-$(ClusterId)-$(ProcId).out
-error = logs/convert/job-$(ClusterId)-$(ProcId).err
-
+log = logs/convert/$(ClusterId)-$(ProcId).log
+output = logs/convert/$(ClusterId)-$(ProcId).out
+error = logs/convert/$(ClusterId)-$(ProcId).err
 accounting_group = taiga
 request_cpus = 1
-request_memory = 4GB
+request_memory = 8GB
 request_disk = 4GB
 on_exit_hold = (ExitBySignal == True) || (ExitCode != 0)
-
-queue input_file, output_prefix from $(jobs_file)
+queue input_file,input_name,output_prefix,output_suffix from $(jobs_file)

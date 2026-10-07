@@ -12,7 +12,7 @@ OPTICS_SUFFIXES = ("_feb", "_seb", "_fhb", "_shb")
 
 def safe_path(path: Path) -> Path:
     resolved = path.resolve()
-    if any(character.isspace() for character in str(resolved)):
+    if any(character.isspace() or character in ',;"$()' for character in str(resolved)):
         raise SystemExit(f"HTCondor item paths must not contain whitespace: {resolved}")
     return resolved
 
@@ -29,7 +29,8 @@ def optics_prefix(output_dir: Path, source: Path) -> Path:
 
 def conversion_complete(prefix: Path, source: Path) -> bool:
     products = (Path(str(prefix) + "_t"), Path(str(prefix) + "_i"))
-    return all(
+    marker = Path(str(prefix) + ".done")
+    return marker.is_file() and marker.stat().st_mtime >= source.stat().st_mtime and all(
         product.is_file()
         and product.stat().st_size > 0
         and product.stat().st_mtime >= source.stat().st_mtime
@@ -66,6 +67,8 @@ def parse_args() -> argparse.Namespace:
     simulate.add_argument("--pattern", default="*_i")
     simulate.add_argument("--jobs-file", type=Path, default=Path("simulate_jobs.tsv"))
     simulate.add_argument("--force", action="store_true")
+    simulate.add_argument("--suffix", choices=OPTICS_SUFFIXES, default="_feb",
+                          help="must match SPM/track_h in parameters")
     return parser.parse_args()
 
 
@@ -99,7 +102,8 @@ def main() -> int:
         else:
             rows.append((source, prefix))
 
-    content = "".join(f"{source}\t{prefix}\n" for source, prefix in rows)
+    suffix = args.suffix if args.stage == "simulate" else "_i"
+    content = "".join(f"{source}\t{source.name}\t{prefix}\t{suffix}\n" for source, prefix in rows)
     jobs_file.write_text(content, encoding="utf-8")
     print(f"Stage: {args.stage}")
     print(f"Found: {len(sources)}; queued: {len(rows)}; skipped complete: {skipped}")

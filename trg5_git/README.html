@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Инструкция для работы с программой моделирования триггера телескопов TAIGA-IACT</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    html, body {
+      background: #1b2129;
+      color: #e9eef1;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      line-height: 1.7;
+    }
+    .container {
+      max-width: 900px;
+      margin: 40px auto;
+      background: #232b34;
+      padding: 44px 32px 36px 32px;
+      border-radius: 18px;
+      box-shadow: 0 5px 32px #000a;
+    }
+    h1, h2, h3 {
+      color: #5ac8fa;
+      margin-top: 2em;
+      margin-bottom: 0.8em;
+      font-weight: 600;
+    }
+    h1 {
+      font-size: 2.3em;
+      text-align: center;
+      border-bottom: 2px solid #364958;
+      padding-bottom: 0.3em;
+      margin-top: 0.3em;
+    }
+    h2 {
+      font-size: 1.5em;
+      border-left: 4px solid #55b1f3;
+      padding-left: 0.7em;
+      background: #1b2129;
+      margin-left: -24px;
+      margin-right: -24px;
+      margin-top: 2em;
+    }
+    h3 {
+      font-size: 1.19em;
+      color: #79f7e2;
+      margin-top: 1.4em;
+      margin-bottom: 0.5em;
+    }
+    p, ul, ol {
+      margin-top: 0.2em;
+      margin-bottom: 1.2em;
+      font-size: 1.08em;
+    }
+    code, .inline-code {
+      background: #17202a;
+      color: #ffe793;
+      padding: 0.2em 0.45em;
+      border-radius: 5px;
+      font-family: 'Fira Mono', 'Consolas', monospace;
+      font-size: 1em;
+    }
+    pre {
+      background: #181e24;
+      color: #b8ffcc;
+      border-left: 5px solid #61d2fa;
+      padding: 1.2em 1.4em;
+      border-radius: 10px;
+      overflow-x: auto;
+      font-size: 1em;
+      margin: 1.6em 0;
+      box-shadow: 0 2px 9px #0b253030;
+    }
+    ul, ol {
+      margin-left: 2.2em;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #232b34;
+      margin: 2em 0 1.5em 0;
+      box-shadow: 0 2px 10px #0005;
+      border-radius: 9px;
+      overflow: hidden;
+      font-size: 1.05em;
+    }
+    th, td {
+      padding: 0.6em 0.8em;
+      border: 1px solid #334055;
+      text-align: center;
+    }
+    th {
+      background: #34577a;
+      color: #fff;
+      font-weight: 600;
+    }
+    tr:nth-child(even) {
+      background: #273140;
+    }
+    tr:hover {
+      background: #34577a;
+      color: #fff;
+    }
+    .note {
+      background: #33414d;
+      border-left: 6px solid #5ac8fa;
+      padding: 1.1em 1.6em;
+      margin: 1.5em 0;
+      border-radius: 8px;
+      color: #bfe9ff;
+      font-size: 1.1em;
+    }
+    a, a:visited {
+      color: #4ec3fa;
+      text-decoration: underline;
+      word-break: break-all;
+    }
+    @media (max-width: 700px) {
+      .container { padding: 1em 2vw; }
+      table, thead, tbody, th, td, tr { font-size: 0.99em; }
+      h2 { margin-left: 0; margin-right: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Инструкция для работы с программой моделирования триггера телескопов TAIGA-IACT</h1>
+    <p>Программа расположена в каталоге <code>/k38/taiga_pool/iact_trigger/trg4/</code>. Перейдите в этот каталог для работы с программой.</p>
+    <h2>Компиляция</h2>
+    <p>не требуется, но для работы с программой моделирования триггера на сервере gridmsu31 необходимо установить библиотеки: numpy pandas tqdm scipy. Сделать это можно командой:</p>
+    <pre><code>pip install numpy pandas tqdm scipy</code></pre>
+    <p>Затем в папке configs создайте свою копию файла <code>trigger_configs.json</code> в этой же папке. Вся настройка моделирования происходит внутри данного файла.</p>
+    
+    <h2>Настраиваемые параметры</h2>
+    <h3>Вспомогательные файлы</h3>
+    <p>Все файлы координат пикселей, коэффицентов относительной чувтствительности ФЭУ и разверток импульсов медленного формирователя камер, которые я когда-либо использовал в моделировании, расположены в папке <code>Calibration</code>.</p>
+
+    <h3>IACTs</h3>
+    <p>IACTs - список телескопов для моделирования. Нуменация от 1 до 5. Номер телескопа связан только с его координатами:</p>
+    <table>
+      <thead>
+        <tr>
+          <th>IACT</th>
+          <th>x, m</th>
+          <th>y, m</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>1</td><td>108.5218</td><td>91.30141</td></tr>
+        <tr><td>2</td><td>-35.51704</td><td>-197.1544</td></tr>
+        <tr><td>3</td><td>329.6131</td><td>-361.2197</td></tr>
+        <tr><td>4</td><td>210.0</td><td>-139.0</td></tr>
+        <tr><td>5</td><td>419.86</td><td>23.46</td></tr>
+      </tbody>
+    </table>
+    <p>Пример заполнения: <span class="inline-code">IACTs = [1,2,3,4,5]</span> - моделирование всех 5 телескопов (если исходный файл их содержит)</p>
+    
+    <h3>pulse_files</h3>
+    <p>pulse_files - путь к файлам, содержащим форму импульса медленного формирователя. Все файлы, которые могут понадобиться для моделирования (формы импульсов, координат пикселей и их относительных чувствительностей)лежат в папке <code>Calibration</code>. При моделировании камеры в режиме полного считывания (когда в каждом событии записываются амплитуды всех пикселей) используется файл <code>Calibration/slow_pulse_iact2_new</code>. Для моделирования камеры со считыванием "с подхватом", когда событие включает только те кластеры, в которых выработался триггер используйте файл импульса <code>slow_pulse_cam1_old.txt</code>. Пример заполнения:</p>
+    <pre><code>pulse_files = [
+    '/k38/taiga_pool/iact_trigger/launch/Calibration/slow_pulse_cam1_old.txt',
+    '/k38/taiga_pool/iact_trigger/launch/Calibration/slow_pulse_iact2_new',
+    '/k38/taiga_pool/iact_trigger/launch/Calibration/slow_pulse_iact2_new',
+    '/k38/taiga_pool/iact_trigger/launch/Calibration/slow_pulse_iact2_new',
+    '/k38/taiga_pool/iact_trigger/launch/Calibration/slow_pulse_iact2_new',
+]</code></pre>
+    <p>первый телескоп (первый по порядку заполнения в IACTs. То есть если заполнить IACTs = [2,3], для них будут все равно использоваться первые две строчки pulse_files) моделируется с импульсом для режима "с подхватом", остальные - со считыванием всей камеры.</p>
+
+    <h3>coord_files</h3>
+    <p>coord_files - список путей к файлам координат телескопов<br>Пример:</p>
+    <pre><code>coord_files = [
+    '/k38/taiga_pool/iact_trigger/launch/Calibration/xy_turn_2019s_EP.txt',
+    '/k38/taiga_pool/iact_trigger/launch/Calibration/XY_turn_2020jan2tel_18fix.txt',
+    '/k38/taiga_pool/iact_trigger/launch/Calibration/XY_turn_2020jan2tel_18fix.txt',
+    '/k38/taiga_pool/iact_trigger/launch/Calibration/XY_turn_2020jan2tel_18fix.txt',
+    '/k38/taiga_pool/iact_trigger/launch/Calibration/XY_turn_2020jan2tel_18fix.txt'
+]</code></pre>
+    <p>первый телескоп моделируется с координатной сеткой TAIGA-IACT01 (актуальной до лета 2022), остальные - с координатной сеткой TAIGA-IACT02 (актуальной до лета 2023)</p>
+    
+    <h3>factors_path</h3>
+    <p>factors_path - список путей к файлам относительной чувствительности пикселей. Даже если Вы в дальнейшем укажете что относительные чувствительности пикселей не используютсмя в Вашем варианте моделирования, здесь нужно какие-то файлы выбрать)<br>Пример:</p>
+    <pre><code>factors_path = [
+    '/k38/taiga_pool/iact_trigger/launch/Calibration/iact01_051019.factors',
+    '/k38/taiga_pool/iact_trigger/launch/Calibration/factors_iact2_310120.led.txt',
+    '/k38/taiga_pool/iact_trigger/launch/Calibration/factors_iact2_310120.led.txt',
+    '/k38/taiga_pool/iact_trigger/launch/Calibration/factors_iact2_310120.led.txt',
+    '/k38/taiga_pool/iact_trigger/launch/Calibration/factors_iact2_310120.led.txt'
+]</code></pre>
+    <p>в данном примере, первый телескоп моделируется с чувствительностями ФЭУ TAIGA-IACT01 (актуальной до лета 2022), остальные - с чувствительностями ФЭУ TAIGA-IACT02 (актуальной до лета 2023)</p>
+    
+    <h3>trigger_type</h3>
+    <p>trigger_type - список типов триггеров для моделироуемых телескопов.<br>
+    0 - с подхватом<br>
+    1 - полное считывание<br>
+    Пример:<br>
+    <span class="inline-code">trigger_type = [0,1,1,1,1]</span> - первый телескоп моделируется в режиме "с подхватом", остальные в режиме "полное считывание"</p>
+    
+    <h3>integrate_window</h3>
+    <p>integrate_window - время интегрирования сигнала. Этот параметр жестко связан с типом тирггера. Если trigger_type выбран 0, тогда время интегрирования 48ns. Если trigger_type выбран 1, тогда время интегрирования 80ns.<br>
+    Пример:<br>
+    <span class="inline-code">integrate_window = [48,80,80,80,80]</span> - настройка соответсвует trigger_type = [0,1,1,1,1]</p>
+
+    <h3>initial_file</h3>
+    <p>initial_file - путь к исходному .feb файлу моделирования. Пример:</p>
+    <pre><code>initial_file = '/k38/taiga_pool/CORSIKA_TAIGA/mc/all1102/bpe1102_31_da0.0_md5_a2021/taiga1102_feb'</code></pre>
+    <p>В случае, если удобнее прописывать путь к файлу моделирования из командной строки (если например Вы будете запускать моделирование с помощью внешнего скрипта перебирающего несколько файлов моделирования):</p>
+    <pre><code>initial_file = sys.argv[1]</code></pre>
+    
+    <h3>gam</h3>
+    <p>gam - Параметр играет роль только при записи направления прихода частицы в конечный файл моделирования. В случае выбора gam=1, будут записанны реальные направления прихода частиц. В случае gam=0 будут записанны случаные координаты в пределах круга, определяемых в <a href="#source_scatter_radius">source_scatter_radius</a>, иммитируя наблюдение за источником.</p>
+    
+    <h3>use_sense</h3>
+    <p>use_sense - использование относительных чувствительностей ФЭУ. 1 - использовать, 0 - не использовать. Используйте только в случае работы с модифицированным оптическим моделированием. Понять какое моделировании оптики было выполнено можно по родителькой папке feb файла. В случае модифицированного запуска TAIGA_optics к версии оптической программы будет приписана буква "m". Например в случае <code>bpe583_33m_da0.0_md5_wb1.22_old_cone/taiga583_feb</code> - 33 - версия оптической программы, m - при запуске TAIGA_optics использовались измененные спектральные чувствительности ФЭУ, позволяющие корректно моделировать чувствительность телескопов.</p>
+    
+    <h3>sense_cam</h3>
+    <p>Если use_sense это активация учета относительных чувствительностей пикселей камеры из файлов, указанных в factors_path, то sense_cam это общий для всей камеры поправочный коэффициент чувствительности к черенковскому свету. Определить подходящий коэффициент sense_cam можно на основе таблицы:</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Сезон</th>
+          <th>Телескоп</th>
+          <th>sense_cam</th>
+          <th>mirror_q</th>
+          <th>sens</th>
+          <th>Конус</th>
+          <th>PMT</th>
+          <th>Период</th>
+          <th>Sigma</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>2022-23</td><td>IACT03</td><td>0.99</td><td>1.0</td><td>2.0</td><td>new cone</td><td>UV</td><td>без осени</td><td>5.5</td></tr>
+        <tr><td>2020-21</td><td>IACT02</td><td>0.94</td><td>1.0</td><td>1.5</td><td>old cone</td><td>—</td><td>с 15 декабря</td><td>3.8</td></tr>
+        <tr><td>2021-22</td><td>IACT02</td><td>0.84</td><td>1.0</td><td>1.5</td><td>old cone</td><td>—</td><td>весь сезон</td><td>4.0</td></tr>
+        <tr><td>2022-23</td><td>IACT02</td><td>0.73</td><td>1.0</td><td>1.5</td><td>old cone</td><td>—</td><td>весь сезон</td><td>4.5</td></tr>
+        <tr><td>2020-21</td><td>IACT01</td><td>0.74</td><td>1.0</td><td>1.5</td><td>old cone</td><td>—</td><td>с 15 декабря</td><td>3.0</td></tr>
+        <tr><td>2021-22</td><td>IACT01</td><td>0.69</td><td>1.0</td><td>1.5</td><td>old cone</td><td>—</td><td>весь сезон</td><td>3.0</td></tr>
+        <tr><td>2022-23</td><td>IACT01</td><td>0.85</td><td>1.0</td><td>1.5</td><td>new cone</td><td>—</td><td>весь сезон</td><td>5.0</td></tr>
+      </tbody>
+    </table>
+    <p>mirror_q - параметр из файла parameters.txt внутри родительской папки моделирования оптики (например bpe583_33m_da0.0_md5_wb1.22_old_cone/parameters_old_cone.txt).<br>
+    sens - параметр указанный в том же файле в строке path_QE (например path_QE XP1911x1.5_pv.txt XP1911 - марка ФЭУ телескопа, 1.5 - коэффициент чувствительности, использованный в файле спектральной чувствительности ФЭУ).</p>
+    <p>Перед зпуском моделирования лучше убедиться что в файле parameters.txt параметры моделирования, соответствуют тому что указано в данной таблице. В противном случае не рекомендуется использоваь use_sense и sense_cam, то есть выставить их значения use_sense = 0 и sense_cam = [1.0,1.0,1.0,1.0 (и т.д. по числу телескопов в моделировании)]. На gridmsu все модифицированные моделирования оптики лежат в папке /k38/taiga_pool/CORSIKA_TAIGA/mc2. Все что лежит в папке /k38/taiga_pool/CORSIKA_TAIGA/mc нельзя использовать с активированными use_sense и sense_cam.</p>
+    
+    <h3>save_path</h3>
+    <p>save_path - путь по которому следует сохранить моделирование. Для этой цели создан каталог <code>outs</code><br>
+    Пример:<br>
+    <span class="inline-code">save_path = '/k38/taiga_pool/iact_trigger/trg4/outs/TEST'</span> - в outs будет создана папка TEST, содержащая Ваше моделирование. Сохранять можно и в Ваш домашний каталог и куда угодно еще.</p>
+    
+    <h3>sim_name</h3>
+    <p>В папке save_path будет создан каталог с названием, эквивалентным названию родительнской папки feb файла + _trg4 (версия программы триггера 4) в конце. Внутри этого каталога можно разместить любое количество моделирований триггера TAIGA-IACT на основе общего моделирования оптики. Каждое такое моделирование будет размещено в отдельном каталоге. Его имя определяется переменной sim_name. sim_name не должны повторяться. В противном случае моделирование триггера не запустится, программа скажет что конфигурация триггера с таким названием уже смоделирована.</p>
+    
+    <h3>amplitudes_file</h3>
+    <p>amplitudes_file - файл, содержащий распределение амплитуд XP1911 с учетом послеимпульсов. Его менять не надо. Но если нужно сделать все амплитуды фотоэлектронов одинаковыми, можно подменить этот файл.</p>
+    
+    <h3 id="source_scatter_radius">source_scatter_radius</h3>
+    <p>source_scatter_radius - радиус круга в пределах которого будут выбираться случайные координаты направлений прихода при выборе параметра gam=0. Для gam=1 не имеет значения какой параметр будет здесь установлен, использоваться будут реальные направленя прихода ШАЛ.</p>
+    
+    <h3>Параметры моделирования электроники триггера</h3>
+    <p>t_grid, t_sign, trig_amp, t_hold, trig_window, t_after_before, max_n_channels_per_cluster - менять не нужно.</p>
+    
+    <h3>hidden_mirror</h3>
+    <p>hidden_mirror - для каждого телескопа можно исключить из моделирования зеркала.</p>
+    
+    <h3>background</h3>
+    <p>background - тип фона ночного неба<br>
+    0 - Фон из заранее наигранного распределения амплитуд<br>
+    1 - Использовать эксприментально измеренное распределние амплитуд<br>
+    2 - Использовать распределение числа фотонов в единицу времени на пиксель<br>
+    Здесь лучше выбирать опцию 0</p>
+    
+    <h3>background_params</h3>
+    <p>background_params - параметры моделирования фона<br>Пример:</p>
+    <pre><code>background_params = {0:{'distribution background': {1: {'mean': 0.0, 'std': 2.5, 'n': 10000},
+                                                    2: {'mean': 0.0, 'std': 2.5, 'n': 10000},
+                                                    3: {'mean': 0.0, 'std': 2.5, 'n': 10000},
+                                                    4: {'mean': 0.0, 'std': 2.5, 'n': 10000},
+                                                    5: {'mean': 0.0, 'std': 2.5, 'n': 10000}}},
+                     1: {'experimental_background_path': {1: sys.argv[1:], 2: sys.argv[1:], 3: sys.argv[1:], 4: sys.argv[1:], 5: sys.argv[1:]}},
+                     2: {'mean_ph': 3, 'mean_phe_time': 35}}</code></pre>
+    <p>Поскольку в предыдущем пункте был выбран background = 0, в данном примере имеет значение только часть:</p>
+    <pre><code>background_params = {0:{'distribution background': {1: {'mean': 0.0, 'std': 2.5, 'n': 10000},
+                                                    2: {'mean': 0.0, 'std': 2.5, 'n': 10000},
+                                                    3: {'mean': 0.0, 'std': 2.5, 'n': 10000},
+                                                    4: {'mean': 0.0, 'std': 2.5, 'n': 10000},
+                                                    5: {'mean': 0.0, 'std': 2.5, 'n': 10000}}}</code></pre>
+    <p>Тем не менее, остальная часть структуры тоже нужна для корректной работы программы, хоть ни на что не влияет.<br>
+    1: {'mean': 0.0, 'std': 2.5, 'n': 10000} - 1 - первый телескоп, среднее значение фоновых амплитуд - 0.0, сигма: 2.5, n - количество амплитуд в распределении = 10000<br>
+    Реалистичные сигмы фона представлены в таблице из раздела sense_cam в столбце Sigma.</p>
+    <p><b>Во всех практических случаях в данной структуре я меняю только значения std!</b></p>
+    
+    <h3>sigma_for_clean</h3>
+    <p>sigma_for_clean - опция для моделирования фона пикселей на основе экспериментальных пьедестальных данных. Менять не нужно.</p>
+    
+    <h3>clean_edge</h3>
+    <p>clean_edge1 - верхний порог клининга<br>
+    clean_edge2 - нижний порог клининга</p>
+    
+    <h3>use_brightest_island</h3>
+    <p>use_brightest_island  - следует ли выделять самый яркий остров в изображении. 0 - нет, 1 - да</p>
+    
+    <h3>make_trigger, make_background, make_cleaning</h3>
+    <p>make_trigger = 1 - следует ли провести моделирование триггера (1 - да, 0 - нет)<br>
+    make_background = 1 - следует ли провести моделирование фона ночного неба (1 - да, 0 - нет)<br>
+    make_cleaning = [1, "None"] - следует ли провести клининг и расчет параметров Хилласа (1 - да, 0 - нет)<br>
+    В подавляющем большинстве случаев все три вышеописанных параметра имеют значения 1. Второй параметр в make_cleaning нужен только когда Вы не моделируете триггер и фон, но хотите сделать клининг. В качестве второй переменной кажите название каталога с фоном, к которому клининг будет применен.</p>
+    <p><b>Остальные параметры в Вашей копии main_processing.py менять не рекомендуется</b></p>
+
+    <h2>Запуск обработки</h2>
+    <p>После того как все параметры указанны, необходимо запустить моделирование из папки trg4.</p>
+    <pre><code>python3 main_processing.py configs/your_trigger_config.json path/to/taiga{number}_feb</code></pre>
+    
+    <h2>Результаты работы программы</h2>
+    <p>Если все прошло успешно, то в папке, которую Вы укажете в save_path будет сохранено моделирование. Папка будет содержать параметры исходного оптического моделирования, csv файлы конфигурации камер телескопов, копию файла your_trigger_config.json с параметрами Вашей обработки и распечатки событий без фона ночного неба и клининга. В папке b0 будут лежать файлы с наложенным фоном ночного неба. В папке b0/Ваш_клининг будут лежать csv таблицы с параметрами смоделированных событий и распечатки событий, прошедших клининг.</p>
+  </div>
+</body>
+</html>
