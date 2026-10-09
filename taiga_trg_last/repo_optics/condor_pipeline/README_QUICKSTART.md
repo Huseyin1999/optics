@@ -18,18 +18,22 @@ make
 ```
 
 ### 1.2. Компиляция триггера и клининга (`trg5`)
-Для сборки требуется компилятор C++11 и библиотека ROOT/MathMore (для сплайнов Акимы в `trigger_iact`):
+В актуальной версии `readbin_v4.cpp` реализован собственный высокоскоростной алгоритм сплайнов Акимы. **Библиотеки CERN ROOT и GSL-заголовки больше не требуются!** Достаточно стандартного компилятора C++11 с поддержкой OpenMP:
+
 ```bash
 cd /path/to/optics/trg5_git
 
-# Сборка клининга
-g++ -std=c++11 cleaning_corsika_pipeline.cpp -O3 -o cleaning -Wall
+# Сборка триггера и клининга через Makefile
+make
 
-# Сборка триггера
-g++ -std=c++11 readbin_v4.cpp -O3 -o trigger_iact \
-    -lMathMore -fopenmp $(root-config --cflags --libs)
+# Или вручную отдельными командами:
+# Сборка клининга:
+g++ -std=c++11 -O3 cleaning_corsika_pipeline.cpp -o cleaning -Wall
+
+# Сборка триггера (без ROOT и GSL):
+g++ -std=c++11 -O3 readbin_v4.cpp -o trigger_iact -fopenmp
 ```
-*Примечание:* Если бинарники `trigger_iact` и `cleaning` уже предсобраны под архитектуру вашего кластера (EL9 x86_64), повторная компиляция не требуется.
+*Примечание:* Для сборки с CERN ROOT доступна отдельная цель `make trigger_root`, однако для запуска в HTCondor рекомендуется стандартная сборка без внешних зависимостей.
 
 ---
 
@@ -38,34 +42,34 @@ g++ -std=c++11 readbin_v4.cpp -O3 -o trigger_iact \
 Сборка самодостаточного архива окружения со всеми бинарниками, калибровками и крупным файлом амплитуд `probablies8.txt`:
 
 ```bash
-cd /taiga/huseyin/optics/test/repo_optics/condor_pipeline
+cd /path/to/optics/condor_pipeline
 
 python3 pack_runtime.py \
-    --hybrid /taiga/huseyin/optics/runtime/bin/hybrid \
-    --optics /taiga/huseyin/optics/runtime/bin/TAIGA_optics_file \
-    --assets /taiga/huseyin/optics/runtime/assets \
-    --library /taiga/huseyin/optics/runtime/lib/libtaiga_io_eventio.so \
-    --library /taiga/huseyin/optics/runtime/lib/libtaiga_io_text.so \
-    --library /taiga/huseyin/optics/runtime/lib/libgsl.so.25 \
-    --library /taiga/huseyin/optics/runtime/lib/libgslcblas.so.0 \
-    --trigger /taiga/huseyin/optics/test/repo_optics/trg5_git/trigger_iact \
-    --cleaning /taiga/huseyin/optics/test/repo_optics/trg5_git/cleaning \
-    --trg-scripts /taiga/huseyin/optics/test/repo_optics/trg5_git \
-    --trg-assets /taiga/huseyin/optics/test/repo_optics/trg5_git \
-    --amplitudes-file /taiga/huseyin/optics/trg5_git/probablies8.txt \
+    --hybrid /path/to/optics/io_taiga/hybrid \
+    --optics /path/to/optics/condor_pipeline/TAIGA_optics_file \
+    --assets /path/to/optics/condor_pipeline/runtime/assets \
+    --library /path/to/libtaiga_io_eventio.so \
+    --library /path/to/libtaiga_io_text.so \
+    --library /usr/lib64/libgsl.so.25 \
+    --library /usr/lib64/libgslcblas.so.0 \
+    --trigger /path/to/optics/trg5_git/trigger_iact \
+    --cleaning /path/to/optics/trg5_git/cleaning \
+    --trg-scripts /path/to/optics/trg5_git \
+    --trg-assets /path/to/optics/trg5_git \
+    --amplitudes-file /path/to/probablies8.txt \
     --output runtime.tar.gz
 ```
-
-
 
 > [!IMPORTANT]
 > Файл `probablies8.txt` не хранится в Git из-за большого размера. Укажите реальный путь к нему на submit-сервере через аргумент `--amplitudes-file`. Скрипт упакует его внутрь `runtime/assets/trg5/probablies8.txt`.
 
 ---
 
-## 3. Сборка и запуск в контейнере (Apptainer / Singularity)
+## 3. Сборка и запуск в контейнере (Apptainer / Singularity — опционально)
 
-Если на рабочих узлах кластера нет установленного ROOT, GSL или Python с `numpy`/`scipy`/`pandas`, используйте готовый рецепт контейнера.
+Благодаря переводу конвейера `run_trg_step.py` на стандартный Python 3 (без `numpy`/`pandas`) и устранению зависимостей от ROOT и GSL-заголовков, **контейнер больше не является обязательным**. Задания успешно выполняются напрямую на рабочих узлах HTCondor с использованием самодостаточного архива `runtime.tar.gz`.
+
+Однако, если в вашей гетерогенной вычислительной среде требуется полная изоляция системных библиотек, доступен готовый рецепт контейнера.
 
 ### 3.1. Сборка образа SIF (на сервере с правами root или fakeroot):
 ```bash
@@ -78,7 +82,7 @@ apptainer build taiga_runtime.sif taiga_runtime.def
 ```text
 +SingularityImage = "/path/to/containers/taiga_runtime.sif"
 ```
-Либо используйте встроенное окружение `runtime.tar.gz` (контейнер не требуется, если на узлах есть совместимый glibc и базовый bash/python3).
+По умолчанию конвейер запускается напрямую без контейнера, используя стандартный `python3` и библиотеки из `runtime.tar.gz`.
 
 ---
 
@@ -89,11 +93,12 @@ apptainer build taiga_runtime.sif taiga_runtime.def
 
 ```bash
 # 1. Создание папки кампании с лимитом в 1 задачу
-python3 prepare_run.py /taiga/huseyin/1000m/E_200_2000TeV/test_3PeV "/taiga/huseyin/taiga_runs/test01" \
+python3 prepare_run.py /path/to/corsika_data "$HOME/taiga_runs/test01" \
+    --limit 1 \
     --radius 100
 
 # 2. Переход в папку кампании
-cd "/taiga/huseyin/taiga_runs"
+cd "$HOME/taiga_runs/test01"
 
 # 3. Сухая проверка синтаксиса HTCondor
 condor_submit -dry-run /dev/null pipeline.sub
@@ -125,7 +130,7 @@ ls -lh results/
 
 ```bash
 # Запуск для всех файлов папки (уже готовое тестовое событие автоматически пропустится)
-python3 prepare_run.py /taiga/huseyin/1000m/E_200_2000TeV/test_3PeV "/taiga/huseyin/taiga_runs/production03" \
+python3 prepare_run.py /path/to/corsika_data "$HOME/taiga_runs/production01" \
     --radius 100
 
 cd "$HOME/taiga_runs/production01"
