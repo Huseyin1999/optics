@@ -1,0 +1,6 @@
+{
+  "name": "TAIGA-IACT Condor Pipeline & Trigger Simulation",
+  "description": "Production HTCondor simulation pipeline combining CORSIKA conversion, optical ray-tracing, and trg5 trigger simulation for TAIGA-IACT telescopes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

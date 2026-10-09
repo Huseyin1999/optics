@@ -1,0 +1,55 @@
+Bootstrap: docker
+From: rockylinux:9
+
+%help
+    Apptainer / Singularity recipe for TAIGA-IACT full simulation pipeline:
+    - CORSIKA hybrid converter
+    - TAIGA_optics ray-tracing simulation
+    - trg5 trigger simulation, NSB background & Hillas parameters calculation
+
+%labels
+    Author TAIGA-IACT Collaboration & Huseyin
+    Version 1.0.0
+    Description "TAIGA Optics & Trigger Simulation Runtime"
+
+%environment
+    export LC_ALL=C
+    export LANG=C
+    export PATH=/usr/local/bin:/usr/bin:$PATH
+    export LD_LIBRARY_PATH=/usr/local/lib:/usr/lib64:$LD_LIBRARY_PATH
+
+%post
+    # Enable CRB and EPEL repositories for scientific packages & ROOT dependencies
+    dnf -y install epel-release dnf-plugins-core
+    dnf config-manager --set-enabled crb
+    dnf -y update
+
+    # Core build tools and scientific libraries
+    dnf -y install \
+        bash \
+        coreutils \
+        tar \
+        gzip \
+        git \
+        make \
+        gcc \
+        gcc-c++ \
+        gsl-devel \
+        libgomp \
+        which \
+        file \
+        findutils \
+        python3 \
+        python3-pip \
+        python3-devel
+
+    # Python packages required by trg5
+    pip3 install --no-cache-dir --upgrade pip
+    pip3 install --no-cache-dir numpy pandas scipy tqdm
+
+    # Cleanup package caches to minimize image footprint
+    dnf clean all
+    rm -rf /var/cache/dnf /root/.cache
+
+%runscript
+    exec "$@"

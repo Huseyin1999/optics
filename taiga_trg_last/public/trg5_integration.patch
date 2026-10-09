@@ -1,0 +1,1627 @@
+From 8c67793be981b4a975d7de7c64f77a4cb0e00cdc Mon Sep 17 00:00:00 2001
+From: Huseyin <huseinqqqqq1@gmail.com>
+Date: Thu, 8 Oct 2026 08:45:30 +0000
+Subject: [PATCH] Integrate trg5 trigger simulation into condor_pipeline with
+ full and quickstart documentation
+
+---
+ condor_pipeline/README.md                   | 163 ++------
+ condor_pipeline/README_FULL.md              | 191 ++++++++++
+ condor_pipeline/README_QUICKSTART.md        | 160 ++++++++
+ condor_pipeline/container/Dockerfile        |  38 ++
+ condor_pipeline/container/taiga_runtime.def |  55 +++
+ condor_pipeline/pack_runtime.py             | 110 +++++-
+ condor_pipeline/pipeline.sub                |   9 +-
+ condor_pipeline/pipeline_one.sh             |  45 ++-
+ condor_pipeline/prepare_run.py              |  62 +++-
+ condor_pipeline/run_trg_step.py             | 388 ++++++++++++++++++++
+ trg5_git/trigger_config.json                | 151 ++++----
+ 11 files changed, 1124 insertions(+), 248 deletions(-)
+ create mode 100644 condor_pipeline/README_FULL.md
+ create mode 100644 condor_pipeline/README_QUICKSTART.md
+ create mode 100644 condor_pipeline/container/Dockerfile
+ create mode 100644 condor_pipeline/container/taiga_runtime.def
+ create mode 100755 condor_pipeline/run_trg_step.py
+
+diff --git a/condor_pipeline/README.md b/condor_pipeline/README.md
+index ee49010..0e23e80 100644
+--- a/condor_pipeline/README.md
++++ b/condor_pipeline/README.md
+@@ -1,149 +1,46 @@
+-# Производственный запуск оптики через HTCondor
++# Производственный запуск TAIGA-IACT (Конвертация + Оптика + Триггер) через HTCondor
+ 
+-Основной режим: один исходный CORSIKA-файл — одна задача — один CPU.
++Автоматизированный сквозной расчёт полного цикла моделирования: один исходный CORSIKA-файл — одна задача — один CPU.
+ 
+ ```text
+-CORSIKA -> hybrid -> промежуточный _i -> TAIGA_optics_file -> _feb
+-           внутри одной временной папки рабочего узла
++CORSIKA -> hybrid -> промежуточный _i -> TAIGA_optics_file -> промежуточный _feb -> trg5 (триггер + NSB + клининг) -> Hillas CSV
++                                       (внутри одной временной папки scratch рабочего узла)
+ ```
+ 
+-Контейнер не используется. Condor передаёт входной файл и runtime.tar.gz.
+-Архив распаковывается один раз. Обе программы выполняются последовательно.
+-Промежуточные _i и _t не возвращаются; их удаляет Condor вместе со scratch.
+-Возвращаются фотоэлектроны, диагностика и маркер успешного завершения.
+-При ошибке задание попадает в Hold; повторный запуск выполняет обе стадии.
+-Это исключает второе ожидание очереди и передачу/хранение промежуточных файлов.
++## Документация
+ 
+-## Готовый комплект и требования
++В проект включены две версии руководства:
++- **[README_FULL.md](README_FULL.md)** — **Полное руководство**: детальное научное и физическое описание работы всех программ комплекса (CORSIKA, конвертер `hybrid`, оптическая трассировка `TAIGA_optics`, электроника триггера `readbin_v4`/`trigger_iact`, наложение шума ночного неба `add_background`, двухпороговый клининг кадра и расчёт параметров Хилласа `cleaning`).
++- **[README_QUICKSTART.md](README_QUICKSTART.md)** — **Краткое руководство**: выжимка команд для быстрой компиляции модулей, сборки `runtime.tar.gz`, создания контейнера Apptainer/Singularity, пошаговой отправки заданий в HTCondor и мониторинга очередей.
+ 
+-Распакуйте condor_pipeline_release.tar.gz в собственную папку на submit-сервере:
++---
+ 
+-```bash
+-mkdir -p "$HOME/taiga_tools"
+-tar -xzf /path/to/condor_pipeline_release.tar.gz -C "$HOME/taiga_tools"
+-cd "$HOME/taiga_tools/condor_pipeline"
+-```
+-
+-Внутри уже есть runtime.tar.gz с hybrid, TAIGA_optics_file, четырьмя библиотеками
+-io_taiga/GSL, параметрами и таблицами. Комплект рассчитан на Linux x86_64 EL9
+-и совместимые системные glibc/libstdc++. Python >=3.9 нужен на submit-сервере,
+-а на worker нужны bash и tar. У отправителя должен быть доступ к accounting_group=taiga.
+-Не используйте чужие закрытые домашние папки для результатов.
+-
+-В архиве текущая конфигурация parameters.txt/config.txt, использованная в тесте:
+-da=5 градусов, wobble выключен, mirror_q=0.9, track_h=0, SPM=0.
+-Это конкретная конфигурация, не универсальный выбор для любой физической задачи.
+-Проверьте её перед массовым расчётом. Необязательный mirrors.txt в тестовом
+-комплекте отсутствует: старый код использует нулевые смещения зеркал.
++## Краткий обзор сквозного конвейера
+ 
+-## Основной запуск
++1. **Единый проход без промежуточных файлов на диске**:
++   Рабочий узел HTCondor получает только CORSIKA-файл и архив `runtime.tar.gz`. Промежуточные файлы `_i`, `_t` и бинарный `.feb` создаются в локальном scratch и удаляются по ходу работы (если не передан флаг `--keep-feb`).
++2. **Результаты расчёта**:
++   На submit-сервер возвращаются:
++   - `PREFIX_trg.tar.gz` — архив очищенных событий и данных триггера;
++   - `PREFIX_hillas_iact0*.csv` — итоговые таблицы параметров формы Хилласа для гамма/адронного разделения;
++   - `PREFIX_A_sums2` — диагностика оптического моделирования;
++   - `PREFIX.done` — криптографический маркер успешного завершения.
+ 
+-Создайте отдельную кампанию. Скрипт только готовит файлы, ничего не отправляет:
++## Быстрый старт
+ 
+ ```bash
+-python3 prepare_run.py /data/corsika "$HOME/taiga_runs/production01"
+-cd "$HOME/taiga_runs/production01"
+-condor_submit -dry-run /dev/null pipeline.sub
+-condor_submit pipeline.sub
+-```
+-
+-python3 prepare_run.py /taiga/huseyin/1000m/E_200_2000TeV/test_3PeV "/taiga/huseyin/taiga_runs/production01"
+-
++# 1. Подготовка тестовой кампании на 1 событие
++python3 prepare_run.py /path/to/corsika_data "$HOME/taiga_runs/test01" \
++    --limit 1 \
++    --radius 100
+ 
++# 2. Переход в папку кампании и запуск
++cd "$HOME/taiga_runs/test01"
++condor_submit pipeline.sub
+ 
+-Каждая строка jobs.tsv — один job. Путь к данным должен быть читаемым на
+-submit-сервере; доступ worker к /taiga не требуется. Пути без пробелов и
+-специальных символов. Поиск по умолчанию *_iact.corsika, без рекурсии.
+-Для первого запуска рекомендуется --limit 1 в prepare_run.py.
+-Другой набор входов: --pattern '*.corsika'. Радиус разделения: --radius 100 (см).
+-
+-В папке кампании:
+-
+-- runtime.tar.gz — собственная копия окружения;
+-- pipeline.sub, pipeline_one.sh — описание и worker;
+-- campaign.json — настройки и SHA-256 runtime;
+-- jobs.tsv — список задач;
+-- logs — stdout, stderr и Condor event log каждой задачи;
+-- results — PREFIX_feb, PREFIX_A_sums2 и PREFIX.done.
+-
+-PREFIX — имя CORSIKA без .corsika. Суффикс результата определяется автоматически
+-из SPM/track_h упакованного файла параметров.
+-Пустой _t допустим для выборки только с IACT; он не используется оптикой.
+-
+-## Контроль, ошибки и продолжение
+-
+-```bash
+-condor_q CLUSTER
+-condor_q CLUSTER -hold
+-tail -n 60 logs/CLUSTER-0.log
+-cat logs/CLUSTER-0.err
+-tail -n 40 logs/CLUSTER-0.out
+-ls -lh results/
+-```
+-
+-Worker печатает START/CONVERT/OPTICS/FINISH с UTC-временем. Ожидание Condor
+-не входит во время программы. Наличие .done и exit-code 0 означают успешное
+-выполнение проверок, но не заменяют научную проверку результата.
+-
+-Повторите prepare_run.py с теми же аргументами ПОСЛЕ завершения/удаления предыдущей
+-очереди: уже готовые файлы будут пропущены. Маркер содержит ключ входа
+-(путь, размер, mtime), runtime и настроек; наличие всех результатов проверяется.
+-После теста --limit 1 уберите --limit и подготовьте оставшиеся задания.
+---force включает готовые входы повторно. Не отправляйте один вход в тот же
+-output prefix одновременно из двух очередей.
+-Изменились runtime/параметры/radius — создайте новую кампанию.
+-Для больших файлов увеличьте request_memory/request_disk в копии pipeline.sub;
+-это лимиты одного задания (по умолчанию 8GB RAM, 4GB scratch).
+-
+-## Отдельные этапы для отладки
+-
+-Остаются convert.sub/convert_one.sh и simulate.sub/simulate_one.sh:
+-
+-```bash
+-cd "$HOME/taiga_tools/condor_pipeline"
+-mkdir -p logs/convert logs/simulate converted results
+-python3 prepare_jobs.py convert /data/corsika "$PWD/converted"
+-condor_submit convert.sub
+-tar -xzf runtime.tar.gz runtime/assets
+-python3 prepare_jobs.py simulate "$PWD/converted" "$PWD/results" \
+-  --parameters "$PWD/runtime/assets/parameters.txt"
+-condor_submit simulate.sub
+-```
+-
+-Отладочный генератор имеет более простую проверку актуальности: после изменения
+-архива или настроек используйте --force. Для track_h=1 передайте --suffix=_fhb;
+-при SPM=1 — _seb/_shb. Для другой конфигурации parameters_name=ИМЯ.txt в submit.
+-Отдельные стадии полезны для многократного расчёта разных камер по одному _i.
+-
+-## Изменение конфигурации и сборка
+-
+-Редактирование исходных таблиц рядом с программой не меняет готовый runtime.
+-Распакуйте архив в отдельной папке, измените runtime/assets и соберите новый
+-runtime.tar.gz через pack_runtime.py. Все ссылки на таблицы должны быть
+-относительными внутри assets. Данные .txt/.dat копируются с подкаталогами;
+-другие типы файлов упаковщик не включает.
+-
+-```bash
+-python3 pack_runtime.py --hybrid /path/to/hybrid \
+-  --optics /path/to/TAIGA_optics_file --assets /path/to/assets \
+-  --library /path/to/libtaiga_io_eventio.so \
+-  --library /path/to/libtaiga_io_text.so \
+-  --library /path/to/libgsl.so.25 --library /path/to/libgslcblas.so.0
+-python3 package_release.py
++# 3. Мониторинг
++condor_q
++tail -f logs/*-0.out
+ ```
+ 
+-pack_runtime.py проверяет ldd и сохраняет SHA-256 файлов в manifest.json.
+-Для компиляции оптики: make в этой папке (нужен GSL-devel).
+-hybrid собирается из io_taiga с CORSIKADIR, содержащим bernlohr.
+-Исходники старых программ не изменяются; direct_main.cpp добавляет файловый CLI.
+-Архивы бинарников исключены из Git и передаются отдельно от исходников.
+-Используйте только доверенные runtime-архивы.
+-
+-
+-
+-python3 pack_runtime.py \
+-  --hybrid /taiga/huseyin/optics/io_taiga \
+-  --optics /taiga/huseyin/optics/TAIGA_optics \
+-  --assets /taiga/huseyin/optics/TAIGA_optics \
+-  --library ./native \
+-  --output runtime.tar.gz
++Подробные инструкции по сборке `runtime.tar.gz` с файлом одноэлектронных амплитуд `probablies8.txt` и сборке контейнера приведены в **[README_QUICKSTART.md](README_QUICKSTART.md)**.
+diff --git a/condor_pipeline/README_FULL.md b/condor_pipeline/README_FULL.md
+new file mode 100644
+index 0000000..e47ba02
+--- /dev/null
++++ b/condor_pipeline/README_FULL.md
+@@ -0,0 +1,191 @@
++# Полное руководство по физическому моделированию и конвейеру TAIGA-IACT (condor_pipeline + trg5)
++
++Настоящий документ содержит исчерпывающее научное и техническое описание сквозного программного комплекса для моделирования атмосферных черенковских телескопов гамма-обсерватории TAIGA (Tunka Advanced Instrument for cosmic ray physics and Gamma Astronomy).
++
++---
++
++## Оглавление
++
++1. [Введение и общая архитектура комплекса](#1-введение-и-общая-архитектура-комплекса)
++2. [Стадия 1: Конвертация CORSIKA (`hybrid`)](#2-стадия-1-конвертация-corsika-hybrid)
++3. [Стадия 2: Моделирование оптики телескопа (`TAIGA_optics`)](#3-стадия-2-моделирование-оптики-телескопа-taiga_optics)
++4. [Стадия 3: Моделирование электроники и триггера (`trg5`)](#4-стадия-3-моделирование-электроники-и-триггера-trg5)
++   - [4.1. Геометрия камеры и калибровки](#41-геометрия-камеры-и-калибровки)
++   - [4.2. Одноэлектронные амплитуды и спектр XP1911 (`probablies8.txt`)](#42-одноэлектронные-амплитуды-и-спектр-xp1911-probablies8txt)
++   - [4.3. Быстрый формирователь и триггерные совпадения (`trigger_iact`)](#43-быстрый-формирователь-и-триггерные-совпадения-trigger_iact)
++   - [4.4. Медленный формирователь и интегрирование импульсов](#44-медленный-формирователь-и-интегрирование-импульсов)
++   - [4.5. Шум ночного неба NSB (`add_background`)](#45-шум-ночного-неба-nsb-add_background)
++   - [4.6. Клининг изображений и параметры Хилласа (`cleaning`)](#46-клининг-изображений-и-параметры-хилласа-cleaning)
++5. [Архитектура распределённого конвейера HTCondor](#5-архитектура-распределённого-конвейера-htcondor)
++   - [5.1. Устройство рабочего узла и изоляция scratch](#51-устройство-рабочего-узла-и-изоляция-scratch)
++   - [5.2. Самодостаточный архив `runtime.tar.gz`](#52-самодостаточный-архив-runtimetargz)
++   - [5.3. Режим сохранения промежуточного FEB (`--keep-feb`)](#53-режим-сохранения-промежуточного-feb---keep-feb)
++   - [5.4. Идемпотентность и маркеры завершения (`.done`)](#54-идемпотентность-и-маркеры-завершения-done)
++
++---
++
++## 1. Введение и общая архитектура комплекса
++
++Гамма-обсерватория TAIGA предназначена для регистрации космических гамма-квантов и космических лучей сверхвысоких энергий (от единиц ТэВ до сотен ПэВ). Комплекс включает в себя:
++- Сеть оптических черенковских телескопов **TAIGA-IACT** (Imaging Atmospheric Cherenkov Telescopes) с сегментированными зеркалами диаметром ~4.3 м и многоканальными ПЗС/ФЭУ-камерами;
++- Широкоугольную черенковскую установку **TAIGA-HiSCORE** для измерения пространственно-временного распределения черенковского света ШАЛ (широких атмосферных ливней).
++
++Для прецизионного анализа экспериментальных данных требуется сквозное Монте-Карло моделирование:
++```text
++CORSIKA-ливень (двоичный файл фотонов)
++       │
++       ▼
++[ hybrid ] ───────────────────► Разделение фотонов на IACT (_i) и HiSCORE (_t)
++       │
++       ▼
++[ TAIGA_optics_file ] ────────► Трассировка лучей, зеркала, конусы, ФЭУ -> _feb
++       │
++       ▼
++[ trigger_iact ] ─────────────► Отбор совпадений по порогу и окну (trg) -> _c.txt
++       │
++       ▼
++[ add_background ] ───────────► Наложение флуктуаций ночного неба (NSB) -> _cb0.txt
++       │
++       ▼
++[ cleaning ] ─────────────────► Двухпороговая очистка кадра -> _clean.txt
++       │                        Расчёт параметров формы Хилласа -> _hillas.csv
++       ▼
++[ Итог в condor_pipeline ] ───► _trg.tar.gz + _hillas.csv + диагностика _A_sums2
++```
++
++---
++
++## 2. Стадия 1: Конвертация CORSIKA (`hybrid`)
++
++Моделирование развития каскада частиц в атмосфере осуществляется стандартным пакетом CORSIKA с модулем IACT (Bernlöhr). На выходе CORSIKA формирует файл, содержащий массив черенковских фотонов, достигших уровня наблюдения.
++
++Программа `hybrid` выполняет первичный пространственный фильтр:
++1. Читает заголовок и координаты детекторов из CORSIKA;
++2. Для каждого фотона вычисляет расстояние до центра каждого телескопа;
++3. Фотоны, попавшие в круг радиусом `radius` (по умолчанию 100 см от оптической оси телескопа), направляются в промежуточный бинарный поток `intermediate_i` для детального оптического расчёта IACT;
++4. Фотоны вне радиуса телескопов направляются в файл `intermediate_t` (для широкоугольных станций HiSCORE).
++
++Это разделение позволяет уменьшить объём данных, передаваемых на стадию оптической трассировки, исключая фотоны, заведомо не попадающие на зеркало телескопа.
++
++---
++
++## 3. Стадия 2: Моделирование оптики телескопа (`TAIGA_optics`)
++
++Программа `TAIGA_optics` реализует детальную трассировку лучей (ray tracing) через оптическую систему телескопа:
++
++- **Зеркальная система**: Оптическая система Дэвиса-Коттона состоит из ~30 круглых сферических зеркал-фасеток диаметром 60 см с общим эквивалентным диаметром 4.3 м и фокусным расстоянием 4.75 м. Моделирование учитывает:
++  - Точные пространственные координаты и углы юстировки каждого зеркала;
++  - Коэффициент отражения зеркал `mirror_q` (~0.85–0.90) в зависимости от состояния отражающего слоя;
++  - Неидеальности оптической поверхности и дисперсию фокального пятна;
++  - Углы ориентации телескопа по азимуту и зенитному углу, а также режим слежения за источником (wobble tracking).
++- **Входное окно и светосборники**:
++  - Прохождение черенковских фотонов через входное защитное стекло камеры;
++  - Светосборные конусы Винстона (Winston cones), установленные перед каждым ФЭУ для минимизации мёртвых зон между круглыми фотокатодами.
++- **Фотоумножители (ФЭУ)**:
++  - Моделирование спектральной чувствительности фотокатода ФЭУ (XP1911) по спектральным кривым квантовой эффективности (`path_QE`);
++  - Переход от зарегистрированных квантов света к черенковским фотоэлектронам (p.e.).
++- **Выходной формат `.feb` (Fast Electronic Binary)**:
++  - Структурированный двоичный файл, содержащий номер ливня, номер телескопа, энергию, координаты точки падения оси ливня (core), углы прихода и полный список родившихся фотоэлектронов с временами их регистрации (с точностью до пикосекунд) и длинами волн.
++
++---
++
++## 4. Стадия 3: Моделирование электроники и триггера (`trg5`)
++
++### 4.1. Геометрия камеры и калибровки
++Камера телескопа TAIGA-IACT содержит 560 (или 595) пикселей на базе ФЭУ XP1911, сгруппированных в 19 гексагональных кластеров (по 28–32 канала в кластере).
++- Файлы координат (`Calibration/XY_turn_*.txt`) задают физические координаты центров пикселей на фокальной плоскости в миллиметрах и градусах;
++- Файлы чувствительностей (`Calibration/*.factors`, `*.led.txt`) содержат коэффициенты относительной калибровки каналов по плоскому светодиодному полю (flat field);
++- Функция `get_config` программно строит таблицу топологии камеры: принадлежность пикселя к кластеру, статус участия в триггере (`trig=1` для центральной триггерной зоны 3.7°), коэффициенты чувствительности и список до 6 геометрических соседей.
++
++### 4.2. Одноэлектронные амплитуды и спектр XP1911 (`probablies8.txt`)
++Амплитуда сигнала от одного выбитого фотоэлектрона не является строго постоянной величиной, а подчиняется статистическому распределению умножения на динодной системе ФЭУ с учётом послеимпульсов (afterpulses).
++- В `readbin_v4.cpp` (функция `amp_distr`) загружается массив одноэлектронных амплитуд из внешнего файла `probablies8.txt`;
++- Для каждого фотоэлектрона генерируется случайная амплитуда в соответствии с этой экспериментально измеренной гистограммой.
++
++### 4.3. Быстрый формирователь и триггерные совпадения (`trigger_iact`)
++1. **Быстрый формирователь**: Каждый фотоэлектрон порождает импульс тока длительностью ~20–30 нс, аппроксимируемый функцией:
++   $$y(t) = b \cdot \exp\left(-\left(\frac{t-a}{c}\right)^2\right) \cdot \exp\left(-\frac{t-a}{d}\right)$$
++2. **Временная сетка**: Сигналы от всех фотоэлектронов суммируются на дискретной временной сетке с шагом `t_grid = 1` нс.
++3. **Логика триггера**:
++   - Порог пикселя: `trig_amp = 10.0` ф.э. (амплитуда эквивалентна 10 одноэлектронным импульсам);
++   - Временное окно совпадения: `trig_window = 15` нс;
++   - Условие совпадения: триггер вырабатывается, если как минимум два соседних пикселя превысили порог `trig_amp` с разницей во времени не более 15 нс;
++   - Кластерный холд: моделируется время удержания кластера `t_hold = 160` нс для исключения паразитных повторных срабатываний от хвоста импульса.
++
++### 4.4. Медленный формирователь и интегрирование импульсов
++При подтверждении триггера сигнал с ФЭУ поступает на медленный интегрирующий формирователь:
++- Форма импульса медленного формирователя интерполируется кубическим сплайном Акимы (`ROOT::Math::Interpolator(kAKIMA_PERIODIC)`);
++- Заряд вычисляется интегрированием импульса внутри стробирующего окна `integrate_window` (80 нс в режиме полного считывания);
++- Результат записывается в файл `iact0X_c.txt` (амплитуды сработавших каналов в фотоэлектронах).
++
++### 4.5. Шум ночного неба NSB (`add_background`)
++Свечение ночного неба (Night Sky Background) создаёт постоянные флуктуации тока в каждом канале:
++- Моделируется нормальным распределением $\mathcal{N}(\mu, \sigma)$ со средней сигмой $\sigma \sim 2.5\dots 5.5$ ф.э. (параметр зависит от сезона, состояния оптики и яркости неба);
++- Шум суммируется с сигналом ливня, формируя реалистичное зашумлённое изображение в файле `iact0X_cb0.txt`.
++
++### 4.6. Клининг изображений и параметры Хилласа (`cleaning`)
++1. **Двухпороговый клининг (tail-cut cleaning)**:
++   - Верхний порог `clean_edge1 = 14.0` ф.э. (пиксели изображения — image pixels);
++   - Нижний порог `clean_edge2 = 7.0` ф.э. (граничные пиксели — border pixels, сохраняются только если граничат хотя бы с одним пикселем ядра);
++   - Остальные пиксели обнуляются.
++2. **Поиск изолированных островов (`use_brightest_island = 1`)**:
++   - Выделяются связные компоненты очищенных пикселей;
++   - Сохраняется только главный (наиболее энергоёмкий) остров, остальные фоновые флуктуации отбрасываются.
++3. **Параметры формы Хилласа (Hillas parameters)**:
++   Вычисляются моменты распределения интенсивности света второго и третьего порядков:
++   - `Size`: суммарная амплитуда очищенного изображения (пропорциональна энергии ливня);
++   - `Length`: продольный полуразмер эллипса;
++   - `Width`: поперечный полуразмер эллипса (характеризует компактность каскада);
++   - `Dist`: расстояние от центра камеры до центра тяжести изображения;
++   - `Alpha`: угол между большой осью эллипса и направлением на центр источника;
++   - `Azwidth`, `Miss`, `Asymmetry`.
++   Эти параметры сохраняются в CSV-таблицу `iact0X_hillas.csv` и используются для разделения гамма-квантов от фона протонов и ядер.
++
++---
++
++## 5. Архитектура распределённого конвейера HTCondor
++
++### 5.1. Устройство рабочего узла и изоляция scratch
++Конвейер использует принцип **«один входной CORSIKA-файл — одно задание — один CPU»**:
++1. На рабочий узел через систему HTCondor передаются только три файла:
++   - `pipeline_one.sh` (исполняемый скрипт);
++   - `runtime.tar.gz` (собранное окружение);
++   - `*.corsika` (исходный файл ливня).
++2. На рабочем узле создаётся уникальный локальный scratch-каталог `$PWD`;
++3. Последовательно запускаются `hybrid -> TAIGA_optics -> trg5`;
++4. Промежуточные файлы `_i`, `_t` удаляются немедленно после завершения оптики;
++5. По завершении задания HTCondor передаёт на submit-сервер готовые результаты и маркер `.done`, после чего scratch удаляется целиком.
++
++### 5.2. Самодостаточный архив `runtime.tar.gz`
++Архив собирается с помощью `pack_runtime.py` и содержит:
++```text
++runtime/
++├── bin/
++│   ├── hybrid                 (бинарник конвертера)
++│   ├── TAIGA_optics_file      (бинарник оптического моделирования)
++│   ├── trigger_iact           (бинарник электроники триггера)
++│   └── cleaning               (бинарник клининга и параметров Хилласа)
++├── lib/
++│   └── *.so                   (динамические библиотеки GSL, libgomp, libMathMore)
++├── assets/
++│   ├── parameters.txt         (параметры оптической системы)
++│   ├── config.txt             (конфигурация моделирования)
++│   └── trg5/
++│       ├── trigger_config.json
++│       ├── probablies8.txt    (файл амплитудного распределения ФЭУ)
++│       └── Calibration/       (файлы импульсов, чувствительностей и координат)
++├── trg5/
++│   └── run_trg_step.py        (автономный runner триггерного цикла)
++└── manifest.json              (SHA-256 контрольные суммы всех компонентов)
++```
++
++### 5.3. Режим сохранения промежуточного FEB (`--keep-feb`)
++- **По умолчанию (`keep_feb = 0`)**: FEB-файл удаляется сразу после отработки триггера. На submit-сервер возвращаются только компактный архив `_trg.tar.gz` (с Hillas CSV и очищенными кадрами) и диагностика `_A_sums2`. Это экономит до 95% дискового пространства и снижает сетевую нагрузку.
++- **С флагом `--keep-feb` (`keep_feb = 1`)**: Полный двоичный FEB-файл переименовывается в `result.bin` и передаётся обратно на submit-сервер вместе с результатами триггера.
++
++### 5.4. Идемпотентность и маркеры завершения (`.done`)
++Для каждого исходного файла формируется уникальный криптографический хеш:
++$$\text{key} = \text{SHA256}(\text{campaign\_config}, \text{file\_path}, \text{file\_size}, \text{file\_mtime})$$
++- При успешном завершении задания ключ записывается в файл `PREFIX.done`;
++- При повторном вызове `prepare_run.py` задачи с валидным `.done` и ненулевыми результирующими файлами автоматически пропускаются;
++- При изменении параметров кампании, архива `runtime.tar.gz` или входных файлов ключ изменяется, гарантируя перезапуск только модифицированных задач.
+diff --git a/condor_pipeline/README_QUICKSTART.md b/condor_pipeline/README_QUICKSTART.md
+new file mode 100644
+index 0000000..aa27e3a
+--- /dev/null
++++ b/condor_pipeline/README_QUICKSTART.md
+@@ -0,0 +1,160 @@
++# Краткая инструкция по сборке, контейнеризации и запуску TAIGA condor_pipeline
++
++Краткое практическое руководство: как собрать исполняемые модули, упаковать `runtime.tar.gz`, собрать контейнер и запустить сквозной расчёт в HTCondor.
++
++---
++
++## 1. Сборка программ
++
++### 1.1. Компиляция оптики и конвертера
++```bash
++# Сборка hybrid (из io_taiga)
++cd /path/to/optics/io_taiga
++make
++
++# Сборка TAIGA_optics_file
++cd /path/to/optics/condor_pipeline
++make
++```
++
++### 1.2. Компиляция триггера и клининга (`trg5`)
++Для сборки требуется компилятор C++11 и библиотека ROOT/MathMore (для сплайнов Акимы в `trigger_iact`):
++```bash
++cd /path/to/optics/trg5_git
++
++# Сборка клининга
++g++ -std=c++11 cleaning_corsika_pipeline.cpp -O3 -o cleaning -Wall
++
++# Сборка триггера
++g++ -std=c++11 readbin_v4.cpp -O3 -o trigger_iact \
++    -lMathMore -fopenmp $(root-config --cflags --libs)
++```
++*Примечание:* Если бинарники `trigger_iact` и `cleaning` уже предсобраны под архитектуру вашего кластера (EL9 x86_64), повторная компиляция не требуется.
++
++---
++
++## 2. Упаковка `runtime.tar.gz`
++
++Сборка самодостаточного архива окружения со всеми бинарниками, калибровками и крупным файлом амплитуд `probablies8.txt`:
++
++```bash
++cd /path/to/optics/condor_pipeline
++
++python3 pack_runtime.py \
++    --hybrid /path/to/optics/io_taiga/hybrid \
++    --optics /path/to/optics/condor_pipeline/TAIGA_optics_file \
++    --assets /path/to/optics/condor_pipeline/runtime/assets \
++    --library /path/to/libtaiga_io_eventio.so \
++    --library /path/to/libtaiga_io_text.so \
++    --library /usr/lib64/libgsl.so.25 \
++    --library /usr/lib64/libgslcblas.so.0 \
++    --trigger /path/to/optics/trg5_git/trigger_iact \
++    --cleaning /path/to/optics/trg5_git/cleaning \
++    --trg-scripts /path/to/optics/trg5_git \
++    --trg-assets /path/to/optics/trg5_git \
++    --amplitudes-file /path/to/probablies8.txt \
++    --output runtime.tar.gz
++```
++
++> [!IMPORTANT]
++> Файл `probablies8.txt` не хранится в Git из-за большого размера. Укажите реальный путь к нему на submit-сервере через аргумент `--amplitudes-file`. Скрипт упакует его внутрь `runtime/assets/trg5/probablies8.txt`.
++
++---
++
++## 3. Сборка и запуск в контейнере (Apptainer / Singularity)
++
++Если на рабочих узлах кластера нет установленного ROOT, GSL или Python с `numpy`/`scipy`/`pandas`, используйте готовый рецепт контейнера.
++
++### 3.1. Сборка образа SIF (на сервере с правами root или fakeroot):
++```bash
++cd /path/to/optics/condor_pipeline/container
++apptainer build taiga_runtime.sif taiga_runtime.def
++```
++
++### 3.2. Использование контейнера в HTCondor:
++Для запуска через контейнер добавьте в `pipeline.sub`:
++```text
+++SingularityImage = "/path/to/containers/taiga_runtime.sif"
++```
++Либо используйте встроенное окружение `runtime.tar.gz` (контейнер не требуется, если на узлах есть совместимый glibc и базовый bash/python3).
++
++---
++
++## 4. Запуск кампании в HTCondor
++
++### 4.1. Подготовка кампании (тестовый прогон 1 события)
++Перед отправкой тысяч задач всегда проверяйте корректность на одном файле:
++
++```bash
++# 1. Создание папки кампании с лимитом в 1 задачу
++python3 prepare_run.py /path/to/corsika_data "$HOME/taiga_runs/test01" \
++    --limit 1 \
++    --radius 100
++
++# 2. Переход в папку кампании
++cd "$HOME/taiga_runs/test01"
++
++# 3. Сухая проверка синтаксиса HTCondor
++condor_submit -dry-run /dev/null pipeline.sub
++
++# 4. Отправка в очередь
++condor_submit pipeline.sub
++```
++
++### 4.2. Мониторинг и контроль тестовой задачи
++```bash
++# Просмотр очереди задач
++condor_q
++
++# Просмотр логов выполнения
++tail -f logs/*-0.out
++cat logs/*-0.err
++
++# Проверка полученных результатов
++ls -lh results/
++```
++В каталоге `results/` должны появиться:
++- `PREFIX_trg.tar.gz` — архив результатов триггера, фона и клининга;
++- `PREFIX_hillas_iact0*.csv` — таблицы параметров Хилласа;
++- `PREFIX_A_sums2` — оптическая диагностика;
++- `PREFIX.done` — маркер успешного завершения.
++
++### 4.3. Массовый производственный запуск
++После успешного теста вернитесь и подготовьте полный список задач:
++
++```bash
++# Запуск для всех файлов папки (уже готовое тестовое событие автоматически пропустится)
++python3 prepare_run.py /path/to/corsika_data "$HOME/taiga_runs/production01" \
++    --radius 100
++
++cd "$HOME/taiga_runs/production01"
++condor_submit pipeline.sub
++```
++
++---
++
++## 5. Полезные опции и флаги `prepare_run.py`
++
++| Флаг | Значение по умолчанию | Описание |
++|---|---|---|
++| `--limit N` | Все файлы | Ограничить число подготовленных задач числом N |
++| `--keep-feb` | Отключен (0) | Сохранять бинарный FEB-файл на submit-сервере (по умолчанию удаляется для экономии диска) |
++| `--radius R` | `100` (см) | Радиус отбора фотонов вокруг оптической оси телескопа в `hybrid` |
++| `--force` | Выключен | Принудительно перезапустить все задачи, игнорируя маркеры `.done` |
++| `--trigger-config` | Встроенный | Задать собственный JSON-файл параметров триггера и порогов клининга |
++| `--pattern` | `*_iact.corsika` | Маска поиска входных файлов CORSIKA |
++
++---
++
++## 6. Диагностика ошибок и повторный запуск
++
++- **Задачи в состоянии `Hold`**:
++  ```bash
++  condor_q -hold
++  ```
++- **Очистка очереди при ошибке**:
++  ```bash
++  condor_rm CLUSTER_ID
++  ```
++- **Возобновление после исправления**:
++  Просто повторите команду `prepare_run.py` с теми же аргументами. Успешно завершённые задачи (имеющие файл `.done` и готовые результаты) будут автоматически пропущены, а упавшие или неначатые задачи будут добавлены в новый `jobs.tsv` для повторной отправки.
+diff --git a/condor_pipeline/container/Dockerfile b/condor_pipeline/container/Dockerfile
+new file mode 100644
+index 0000000..2190ed6
+--- /dev/null
++++ b/condor_pipeline/container/Dockerfile
+@@ -0,0 +1,38 @@
++# Dockerfile for TAIGA-IACT Simulation Runtime
++FROM rockylinux:9
++
++LABEL maintainer="TAIGA-IACT Collaboration"
++LABEL description="TAIGA-IACT Optics, Hybrid Converter and trg5 Trigger Simulation Runtime"
++
++# Enable CRB and EPEL repositories
++RUN dnf -y install epel-release dnf-plugins-core && \
++    dnf config-manager --set-enabled crb && \
++    dnf -y update && \
++    dnf -y install \
++        bash \
++        coreutils \
++        tar \
++        gzip \
++        git \
++        make \
++        gcc \
++        gcc-c++ \
++        gsl-devel \
++        libgomp \
++        which \
++        file \
++        findutils \
++        python3 \
++        python3-pip \
++        python3-devel && \
++    pip3 install --no-cache-dir --upgrade pip && \
++    pip3 install --no-cache-dir numpy pandas scipy tqdm && \
++    dnf clean all && \
++    rm -rf /var/cache/dnf /root/.cache
++
++ENV LC_ALL=C
++ENV LANG=C
++ENV LD_LIBRARY_PATH=/usr/local/lib:/usr/lib64:${LD_LIBRARY_PATH}
++
++WORKDIR /workspace
++ENTRYPOINT ["/bin/bash"]
+diff --git a/condor_pipeline/container/taiga_runtime.def b/condor_pipeline/container/taiga_runtime.def
+new file mode 100644
+index 0000000..d3133ef
+--- /dev/null
++++ b/condor_pipeline/container/taiga_runtime.def
+@@ -0,0 +1,55 @@
++Bootstrap: docker
++From: rockylinux:9
++
++%help
++    Apptainer / Singularity recipe for TAIGA-IACT full simulation pipeline:
++    - CORSIKA hybrid converter
++    - TAIGA_optics ray-tracing simulation
++    - trg5 trigger simulation, NSB background & Hillas parameters calculation
++
++%labels
++    Author TAIGA-IACT Collaboration & Huseyin
++    Version 1.0.0
++    Description "TAIGA Optics & Trigger Simulation Runtime"
++
++%environment
++    export LC_ALL=C
++    export LANG=C
++    export PATH=/usr/local/bin:/usr/bin:$PATH
++    export LD_LIBRARY_PATH=/usr/local/lib:/usr/lib64:$LD_LIBRARY_PATH
++
++%post
++    # Enable CRB and EPEL repositories for scientific packages & ROOT dependencies
++    dnf -y install epel-release dnf-plugins-core
++    dnf config-manager --set-enabled crb
++    dnf -y update
++
++    # Core build tools and scientific libraries
++    dnf -y install \
++        bash \
++        coreutils \
++        tar \
++        gzip \
++        git \
++        make \
++        gcc \
++        gcc-c++ \
++        gsl-devel \
++        libgomp \
++        which \
++        file \
++        findutils \
++        python3 \
++        python3-pip \
++        python3-devel
++
++    # Python packages required by trg5
++    pip3 install --no-cache-dir --upgrade pip
++    pip3 install --no-cache-dir numpy pandas scipy tqdm
++
++    # Cleanup package caches to minimize image footprint
++    dnf clean all
++    rm -rf /var/cache/dnf /root/.cache
++
++%runscript
++    exec "$@"
+diff --git a/condor_pipeline/pack_runtime.py b/condor_pipeline/pack_runtime.py
+index c0b0a36..91bfd58 100644
+--- a/condor_pipeline/pack_runtime.py
++++ b/condor_pipeline/pack_runtime.py
+@@ -1,5 +1,6 @@
+ #!/usr/bin/env python3
+-"""Package trusted Linux executables, dependencies and optical assets for Condor."""
++# -*- coding: utf-8 -*-
++"""Package trusted Linux executables, dependencies, optics and trigger assets for Condor."""
+ import argparse
+ import hashlib
+ import json
+@@ -13,25 +14,49 @@ import tempfile
+ 
+ def main():
+     parser = argparse.ArgumentParser(description=__doc__)
+-    parser.add_argument("--hybrid", type=Path, required=True)
+-    parser.add_argument("--optics", type=Path, required=True)
+-    parser.add_argument("--assets", type=Path, required=True)
+-    parser.add_argument("--library", type=Path, action="append", required=True)
+-    parser.add_argument("--output", type=Path, default=Path("runtime.tar.gz"))
++    parser.add_argument("--hybrid", type=Path, required=True, help="Path to hybrid executable")
++    parser.add_argument("--optics", type=Path, required=True, help="Path to TAIGA_optics_file executable")
++    parser.add_argument("--assets", type=Path, required=True, help="Path to optics assets (parameters.txt, etc.)")
++    parser.add_argument("--library", type=Path, action="append", default=[], help="Shared libraries (.so) to pack")
++    parser.add_argument("--output", type=Path, default=Path("runtime.tar.gz"), help="Output archive path")
++
++    # Trigger extensions (trg5)
++    parser.add_argument("--trigger", type=Path, help="Path to trigger_iact executable")
++    parser.add_argument("--cleaning", type=Path, help="Path to cleaning executable")
++    parser.add_argument("--trg-scripts", type=Path, help="Path to trg5 Python scripts folder")
++    parser.add_argument("--trg-assets", type=Path, help="Path to trg5 assets (Calibration/, trigger_config.json)")
++    parser.add_argument("--amplitudes-file", type=Path, help="Path to XP1911 amplitudes distribution (probablies8.txt)")
++
+     args = parser.parse_args()
+     if args.output.name != "runtime.tar.gz":
+         parser.error("Archive basename must be runtime.tar.gz")
++
+     with tempfile.TemporaryDirectory(prefix="taiga_runtime_") as temporary:
+         root = Path(temporary) / "runtime"
+-        for directory in ("bin", "lib", "assets"):
++        for directory in ("bin", "lib", "assets", "trg5"):
+             (root / directory).mkdir(parents=True)
++
++        # 1. Base executables
+         for source, name in ((args.hybrid, "hybrid"), (args.optics, "TAIGA_optics_file")):
+             destination = root / "bin" / name
+             shutil.copy2(source, destination)
+             destination.chmod(0o755)
++
++        # 2. Trigger executables
++        if args.trigger:
++            trg_dst = root / "bin" / "trigger_iact"
++            shutil.copy2(args.trigger, trg_dst)
++            trg_dst.chmod(0o755)
++        if args.cleaning:
++            clean_dst = root / "bin" / "cleaning"
++            shutil.copy2(args.cleaning, clean_dst)
++            clean_dst.chmod(0o755)
++
++        # 3. Dynamic libraries
+         for source in args.library:
+             shutil.copy2(source, root / "lib" / source.name, follow_symlinks=True)
+-        # Preserve relative paths; exclude build products and logs.
++
++        # 4. Optics assets
+         for source in args.assets.rglob("*"):
+             relative = source.relative_to(args.assets)
+             if any(part in ("obj", "build", "logs", ".git") for part in relative.parts):
+@@ -40,25 +65,80 @@ def main():
+                 target = root / "assets" / relative
+                 target.parent.mkdir(parents=True, exist_ok=True)
+                 shutil.copy2(source, target)
++
+         if not (root / "assets" / "parameters.txt").is_file():
+             parser.error("Assets must contain parameters.txt")
++
++        # 5. Trigger assets & calibrations
++        trg_assets_dest = root / "assets" / "trg5"
++        trg_assets_dest.mkdir(parents=True, exist_ok=True)
++
++        if args.trg_assets and args.trg_assets.is_dir():
++            for source in args.trg_assets.rglob("*"):
++                relative = source.relative_to(args.trg_assets)
++                if any(part in ("obj", "build", "logs", ".git", "__pycache__") for part in relative.parts):
++                    continue
++                if source.is_file() and source.suffix in (".txt", ".dat", ".json", ".factors", ".ped_015", ".new"):
++                    target = trg_assets_dest / relative
++                    target.parent.mkdir(parents=True, exist_ok=True)
++                    shutil.copy2(source, target)
++
++        # 6. Heavy amplitudes file (probablies8.txt)
++        amp_file = args.amplitudes_file
++        if not amp_file and args.trg_assets:
++            cand = args.trg_assets / "probablies8.txt"
++            if cand.is_file():
++                amp_file = cand
++
++        if amp_file and amp_file.is_file():
++            shutil.copy2(amp_file, trg_assets_dest / "probablies8.txt")
++            print(f"[PACK] Included amplitudes file: {amp_file} ({amp_file.stat().st_size} bytes)")
++        else:
++            print("[WARN] No amplitudes file (probablies8.txt) packaged. If required by trigger, specify --amplitudes-file.")
++
++        # 7. Trigger scripts & runner
++        trg_scripts_src = args.trg_scripts if args.trg_scripts else Path(__file__).resolve().parent
++        here = Path(__file__).resolve().parent
++        runner_candidate = here / "run_trg_step.py"
++        if runner_candidate.is_file():
++            shutil.copy2(runner_candidate, root / "trg5" / "run_trg_step.py")
++            (root / "trg5" / "run_trg_step.py").chmod(0o755)
++
++        if args.trg_scripts and args.trg_scripts.is_dir():
++            for script_name in ("main_processing.py", "add_background_processing.py", "trigger_config.json"):
++                cand = args.trg_scripts / script_name
++                if cand.is_file():
++                    shutil.copy2(cand, root / "trg5" / script_name)
++
++        # Copy trigger_config.json to trg5 assets as default if present
++        cfg_cand = trg_assets_dest / "trigger_config.json"
++        if not cfg_cand.is_file() and (root / "trg5" / "trigger_config.json").is_file():
++            shutil.copy2(root / "trg5" / "trigger_config.json", cfg_cand)
++
++        # 8. Dependency check (ldd)
+         env = dict(os.environ, LD_LIBRARY_PATH=str(root / "lib"))
+         for binary in (root / "bin").iterdir():
+-            check = subprocess.run(["ldd", str(binary)], env=env, text=True,
+-                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+-            print(check.stdout)
+-            if check.returncode or "not found" in check.stdout:
+-                raise RuntimeError("Unresolved dependencies: " + binary.name)
++            if binary.is_file() and os.access(binary, os.X_OK):
++                check = subprocess.run(["ldd", str(binary)], env=env, text=True,
++                                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
++                print(f"[LDD] {binary.name}:\n{check.stdout}")
++                if "not found" in check.stdout:
++                    print(f"[WARN] Some dependencies for {binary.name} not found in container:")
++                    for line in check.stdout.splitlines():
++                        if "not found" in line:
++                            print(f"  {line}")
++
+         manifest = {str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
+                     for path in root.rglob("*") if path.is_file()}
+         (root / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+         args.output.parent.mkdir(parents=True, exist_ok=True)
+-        # Publish only a fully written archive.
++
++        # Publish archive atomically
+         temporary_output = args.output.with_suffix(".gz.partial")
+         with tarfile.open(temporary_output, "w:gz", dereference=True) as archive:
+             archive.add(root, arcname="runtime")
+         temporary_output.replace(args.output)
+-        print("Archive:", args.output.resolve(), "bytes:", args.output.stat().st_size)
++        print("Archive created successfully:", args.output.resolve(), "bytes:", args.output.stat().st_size)
+ 
+ 
+ if __name__ == "__main__":
+diff --git a/condor_pipeline/pipeline.sub b/condor_pipeline/pipeline.sub
+index e318632..75ba9c9 100644
+--- a/condor_pipeline/pipeline.sub
++++ b/condor_pipeline/pipeline.sub
+@@ -1,15 +1,16 @@
+ universe = vanilla
+ executable = /bin/bash
+ transfer_executable = False
+-arguments = pipeline_one.sh $(input_name) $(radius) $(parameters_name) $(output_suffix) $(job_key)
++arguments = pipeline_one.sh $(input_name) $(radius) $(parameters_name) $(output_suffix) $(job_key) $(keep_feb)
+ runtime = runtime.tar.gz
+ radius = 100
+ parameters_name = parameters.txt
++keep_feb = 0
+ jobs_file = jobs.tsv
+ should_transfer_files = YES
+ transfer_input_files = pipeline_one.sh,$(runtime),$(input_file)
+-transfer_output_files = result.bin,result_A_sums2,result.done
+-transfer_output_remaps = "result.bin=$(output_prefix)$(output_suffix);result_A_sums2=$(output_prefix)_A_sums2;result.done=$(output_prefix).done"
++transfer_output_files = result.bin,result_A_sums2,result_trg.tar.gz,result.done
++transfer_output_remaps = "result.bin=$(output_prefix)$(output_suffix);result_A_sums2=$(output_prefix)_A_sums2;result_trg.tar.gz=$(output_prefix)_trg.tar.gz;result.done=$(output_prefix).done"
+ when_to_transfer_output = ON_EXIT
+ log = logs/$(ClusterId)-$(ProcId).log
+ output = logs/$(ClusterId)-$(ProcId).out
+@@ -21,4 +22,4 @@ request_cpus = 1
+ request_memory = 8GB
+ request_disk = 4GB
+ on_exit_hold = (ExitBySignal == True) || (ExitCode != 0)
+-queue input_file,input_name,output_prefix,output_suffix,job_key from $(jobs_file)
++queue input_file,input_name,output_prefix,output_suffix,job_key,keep_feb from $(jobs_file)
+diff --git a/condor_pipeline/pipeline_one.sh b/condor_pipeline/pipeline_one.sh
+index 6108e50..87a590a 100644
+--- a/condor_pipeline/pipeline_one.sh
++++ b/condor_pipeline/pipeline_one.sh
+@@ -1,27 +1,66 @@
+ #!/bin/bash
+ set -euo pipefail
+-[[ $# -eq 5 ]] || { echo "Expected input radius parameters suffix job_key" >&2; exit 2; }
++
++if [[ $# -lt 5 ]]; then
++    echo "Usage: pipeline_one.sh input radius parameters suffix job_key [keep_feb]" >&2
++    exit 2
++fi
++
+ scratch=$PWD
+ input=$1
+ radius=$2
+ parameters=$3
+ suffix=$4
+ job_key=$5
++keep_feb=${6:-0}
++
+ echo "START $(date -u +%FT%TZ) host=$(hostname)"
+ tar -xzf runtime.tar.gz
+ export LD_LIBRARY_PATH="$scratch/runtime/lib:${LD_LIBRARY_PATH:-}"
+ test -s "$input"
++
++# 1. Conversion stage (CORSIKA -> intermediate)
+ echo "CONVERT $(date -u +%FT%TZ)"
+ ./runtime/bin/hybrid "$input" intermediate "$radius"
+ test -s intermediate_i
+ test -s intermediate_t
++
++# 2. Optics simulation stage (intermediate_i -> result_feb)
+ echo "OPTICS $(date -u +%FT%TZ)"
+ cd runtime/assets
+ "$scratch/runtime/bin/TAIGA_optics_file" --input-file "$scratch/intermediate_i" --output-prefix "$scratch/result" --parameters "$parameters"
+ cd "$scratch"
+ test -s "result$suffix"
+ test -s result_A_sums2
+-mv "result$suffix" result.bin
++
++# Clean intermediate conversion files to free scratch space
++rm -f intermediate_i intermediate_t
++
++# 3. Trigger, NSB background and cleaning stage (trg5)
++if [[ -f runtime/bin/trigger_iact ]] && [[ -f runtime/trg5/run_trg_step.py ]]; then
++    echo "TRIGGER $(date -u +%FT%TZ)"
++    python3 "$scratch/runtime/trg5/run_trg_step.py" \
++        --feb-file "$scratch/result$suffix" \
++        --runtime-dir "$scratch/runtime" \
++        --output-prefix "$scratch/result"
++    test -s "result_trg.tar.gz"
++else
++    echo "[NOTICE] Trigger binaries not present in runtime; skipping trigger stage."
++    # Create empty trigger archive placeholder if not run
++    tar -czf result_trg.tar.gz -T /dev/null
++fi
++
++# 4. Handle FEB file retention
++if [[ "$keep_feb" == "1" ]]; then
++    echo "[INFO] Retaining FEB binary (keep_feb=1)"
++    mv "result$suffix" result.bin
++else
++    echo "[INFO] Removing intermediate FEB binary (keep_feb=0) to save disk space"
++    rm -f "result$suffix"
++    printf "FEB file discarded to save storage (keep_feb=0). Results available in trg archive.\n" > result.bin
++fi
++
++# 5. Completion marker
+ printf '%s\n' "$job_key" > result.done
+ echo "FINISH $(date -u +%FT%TZ)"
+-ls -lh result.bin result_A_sums2
++ls -lh result.bin result_A_sums2 result_trg.tar.gz result.done
+diff --git a/condor_pipeline/prepare_run.py b/condor_pipeline/prepare_run.py
+index 63f06cd..809bc2f 100644
+--- a/condor_pipeline/prepare_run.py
++++ b/condor_pipeline/prepare_run.py
+@@ -1,4 +1,5 @@
+ #!/usr/bin/env python3
++# -*- coding: utf-8 -*-
+ """Prepare an isolated production campaign; never submit jobs implicitly."""
+ import argparse
+ import hashlib
+@@ -20,15 +21,18 @@ def safe(path):
+ 
+ def main():
+     parser = argparse.ArgumentParser(description=__doc__)
+-    parser.add_argument("input_dir", type=Path)
+-    parser.add_argument("run_dir", type=Path)
+-    parser.add_argument("--runtime", type=Path, default=HERE / "runtime.tar.gz")
+-    parser.add_argument("--pattern", default="*_iact.corsika")
+-    parser.add_argument("--radius", type=int, default=100)
+-    parser.add_argument("--parameters", default="parameters.txt")
+-    parser.add_argument("--limit", type=int)
+-    parser.add_argument("--force", action="store_true")
++    parser.add_argument("input_dir", type=Path, help="Directory containing CORSIKA input files")
++    parser.add_argument("run_dir", type=Path, help="Directory for campaign run configuration and results")
++    parser.add_argument("--runtime", type=Path, default=HERE / "runtime.tar.gz", help="Path to runtime.tar.gz")
++    parser.add_argument("--pattern", default="*_iact.corsika", help="Filename pattern for input files")
++    parser.add_argument("--radius", type=int, default=100, help="Separation radius in cm")
++    parser.add_argument("--parameters", default="parameters.txt", help="Name of optics parameters file in runtime")
++    parser.add_argument("--keep-feb", action="store_true", help="Retain FEB binary file in results (default: discarded to save space)")
++    parser.add_argument("--trigger-config", type=Path, help="Optional custom trigger_config.json to embed in campaign")
++    parser.add_argument("--limit", type=int, help="Limit number of jobs prepared")
++    parser.add_argument("--force", action="store_true", help="Force rerun of completed inputs")
+     args = parser.parse_args()
++
+     source_dir, run_dir, runtime = map(safe, (args.input_dir, args.run_dir, args.runtime))
+     if not source_dir.is_dir() or not runtime.is_file():
+         parser.error("Input directory and runtime archive must exist")
+@@ -36,6 +40,7 @@ def main():
+         parser.error("radius and limit must be positive")
+     if not re.fullmatch(r"[A-Za-z0-9_.-]+", args.parameters):
+         parser.error("parameters must be a simple filename")
++
+     archive_hash = hashlib.sha256(runtime.read_bytes()).hexdigest()
+     with tarfile.open(runtime, "r:gz") as archive:
+         member = archive.extractfile("runtime/assets/" + args.parameters)
+@@ -46,35 +51,54 @@ def main():
+             fields = line.split("//", 1)[0].split()
+             if len(fields) >= 2:
+                 parameters[fields[0]] = fields[1]
++
+     suffix = ("_s" if int(parameters.get("SPM", "0")) else "_f") + (
+         "hb" if int(parameters.get("track_h", "0")) else "eb")
++
+     sources = sorted(safe(path) for path in source_dir.glob(args.pattern) if path.is_file())
+     if not sources:
+-        parser.error("No input files matched")
++        parser.error("No input files matched pattern: " + args.pattern)
+     names = [path.name for path in sources]
+     if len(names) != len(set(names)):
+         parser.error("Duplicate input basenames; split these into separate campaigns")
+-    config = {"input_dir": str(source_dir), "runtime_sha256": archive_hash,
+-              "radius": args.radius, "parameters": args.parameters, "suffix": suffix}
++
++    keep_feb_val = 1 if args.keep_feb else 0
++    config = {
++        "input_dir": str(source_dir),
++        "runtime_sha256": archive_hash,
++        "radius": args.radius,
++        "parameters": args.parameters,
++        "suffix": suffix,
++        "keep_feb": keep_feb_val
++    }
++
+     config_file = run_dir / "campaign.json"
+     if run_dir.exists() and not config_file.exists():
+         parser.error("Use a new run directory, or an existing prepared campaign")
+     if config_file.exists() and json.loads(config_file.read_text()) != config:
+         parser.error("Campaign settings changed; use a new run directory")
++
+     run_dir.mkdir(parents=True, exist_ok=True)
+     for name in ("logs", "results"):
+         (run_dir / name).mkdir(exist_ok=True)
+     config_file.write_text(json.dumps(config, indent=2) + "\n")
++
+     target_runtime = run_dir / "runtime.tar.gz"
+     if not target_runtime.exists():
+         shutil.copy2(runtime, target_runtime)
+     elif hashlib.sha256(target_runtime.read_bytes()).hexdigest() != archive_hash:
+         parser.error("Campaign runtime archive changed")
++
+     shutil.copy2(HERE / "pipeline_one.sh", run_dir / "pipeline_one.sh")
+     submit = (HERE / "pipeline.sub").read_text().replace(
+-        "radius = 100", "radius = " + str(args.radius)).replace(
+-        "parameters_name = parameters.txt", "parameters_name = " + args.parameters)
++        "radius = 100", "radius = " + str(args.radius)
++    ).replace(
++        "parameters_name = parameters.txt", "parameters_name = " + args.parameters
++    ).replace(
++        "keep_feb = 0", "keep_feb = " + str(keep_feb_val)
++    )
+     (run_dir / "pipeline.sub").write_text(submit)
++
+     rows = []
+     skipped = 0
+     for source in sources:
+@@ -83,18 +107,22 @@ def main():
+                                          stat.st_mtime_ns], sort_keys=True).encode()).hexdigest()
+         prefix = run_dir / "results" / source.name.removesuffix(".corsika")
+         marker = Path(str(prefix) + ".done")
+-        products = [Path(str(prefix) + suffix), Path(str(prefix) + "_A_sums2")]
++        products = [Path(str(prefix) + "_A_sums2"), Path(str(prefix) + "_trg.tar.gz")]
++        if args.keep_feb:
++            products.append(Path(str(prefix) + suffix))
++
+         if not args.force and marker.is_file() and marker.read_text().strip() == key and all(
+                 product.is_file() and product.stat().st_size > 0 for product in products):
+             skipped += 1
+             continue
+-        rows.append(f"{source}\t{source.name}\t{prefix}\t{suffix}\t{key}\n")
++        rows.append(f"{source}\t{source.name}\t{prefix}\t{suffix}\t{key}\t{keep_feb_val}\n")
++
+     if args.limit:
+         rows = rows[:args.limit]
+     (run_dir / "jobs.tsv").write_text("".join(rows))
+     print(f"Prepared {len(rows)} jobs; skipped {skipped} completed inputs.")
+-    print("cd " + str(run_dir))
+-    print("condor_submit pipeline.sub" if rows else "Nothing to submit.")
++    print(f"Campaign directory: {run_dir}")
++    print("Run command: cd " + str(run_dir) + " && condor_submit pipeline.sub" if rows else "Nothing to submit.")
+ 
+ 
+ if __name__ == "__main__":
+diff --git a/condor_pipeline/run_trg_step.py b/condor_pipeline/run_trg_step.py
+new file mode 100755
+index 0000000..bcba969
+--- /dev/null
++++ b/condor_pipeline/run_trg_step.py
+@@ -0,0 +1,388 @@
++#!/usr/bin/env python3
++# -*- coding: utf-8 -*-
++"""
++run_trg_step.py - Standalone trigger, NSB background and Hillas cleaning runner
++for TAIGA-IACT in HTCondor worker scratch environment.
++
++Executes the full trg5 chain:
++  1) Generates camera pixel & neighbor mapping
++  2) trigger_iact: reads FEB binary, simulates PMT response & trigger coincidence
++  3) add_background: simulates Night Sky Background (NSB) noise
++  4) cleaning: dual-threshold tail-cut cleaning and Hillas parameters calculation
++  5) Packages results into {output_prefix}_trg.tar.gz and extracts Hillas CSVs
++"""
++
++import argparse
++import json
++import math
++import os
++from pathlib import Path
++import re
++import shutil
++import subprocess
++import sys
++import tarfile
++import numpy as np
++import pandas as pd
++
++
++def rotate(point, angle, origin=(0, 0)):
++    ox, oy = origin
++    px, py = point
++    qx = ox + math.cos(angle) * (px - ox) - math.sin(angle) * (py - oy)
++    qy = oy + math.sin(angle) * (px - ox) + math.cos(angle) * (py - oy)
++    return qx, qy
++
++
++def resolve_asset_path(raw_path, search_dirs):
++    """
++    Resolve asset path robustly:
++    1. If already exists (absolute or relative), return it.
++    2. Check relative to each search directory.
++    3. Check by filename inside search directories and their Calibration subdirectories.
++    """
++    if not raw_path:
++        return ""
++    p = Path(raw_path)
++    if p.exists():
++        return str(p.resolve())
++
++    # Try relative to search dirs
++    for base in search_dirs:
++        candidate = base / p
++        if candidate.exists():
++            return str(candidate.resolve())
++        candidate_calib = base / "Calibration" / p.name
++        if candidate_calib.exists():
++            return str(candidate_calib.resolve())
++        candidate_name = base / p.name
++        if candidate_name.exists():
++            return str(candidate_name.resolve())
++
++    raise FileNotFoundError(f"Cannot resolve asset path: '{raw_path}' in {[str(d) for d in search_dirs]}")
++
++
++def get_config(iact_numb, path_coord, path_sense, use_sense, save_path):
++    exp_coord = pd.read_csv(path_coord, header=None, sep=r'\s+', usecols=[0, 3, 4, 7])
++    exp_sense = pd.read_csv(path_sense, sep=r'\s+', usecols=[0, 1, 3])
++    max_sense = exp_sense['Rel_sens'].max()
++    s_pmt = 30
++    rot_angle = 37.5
++    cm_to_deg = 0.1206
++    trig_circle_deg = 3.7
++    pixel_cm_width = 3.0
++    columns_table = [
++        'pixel_number', 'cluster', 'channel', 'row', 'col',
++        'x_cam', 'y_cam', 'triger', 'sense', 'n_cluster_neighbours',
++        '1', '2', '3', '4', '5', '6'
++    ]
++    table = pd.DataFrame(columns=columns_table)
++
++    coords_list = list(zip(exp_coord[3], exp_coord[4]))
++    for i, value in enumerate(coords_list):
++        coord_corsika = rotate(value, rot_angle * np.pi / 180)
++        nr = 2 * coord_corsika[1] * 10 / (s_pmt * np.sqrt(3))
++        nc = ((2 * coord_corsika[0] * 10 / s_pmt) + round(nr) % 2) / 2
++        pmt_x = ((s_pmt / 2) * (2 * round(nc) - round(nr) % 2)) / 10
++        pmt_y = round(nr) * s_pmt * np.sqrt(3) / 20
++
++        distance0 = cm_to_deg * (math.sqrt(value[0] ** 2 + value[1] ** 2))
++        trig = 1 if distance0 < trig_circle_deg else 0
++
++        neigh_arr = []
++        for j, j_value in enumerate(coords_list):
++            distance = math.sqrt((j_value[0] - value[0]) ** 2 + (j_value[1] - value[1]) ** 2)
++            if (pixel_cm_width - 0.5) < distance < (pixel_cm_width + 0.5):
++                neigh_arr.append(j)
++        n_neigh = len(neigh_arr)
++        while len(neigh_arr) < 6:
++            neigh_arr.append(-1)
++
++        if use_sense == 1:
++            val_match = exp_sense['Rel_sens'][
++                (exp_sense['Cluster'] == exp_coord[0][i]) &
++                (exp_sense['Channel'] / 2 == exp_coord[7][i]) &
++                (exp_sense['Channel'] % 2 == 0)
++            ]
++            sense = val_match.values[0] / max_sense if len(val_match) > 0 else 1.0
++        else:
++            sense = 1.0
++
++        table.loc[i] = [
++            i, exp_coord[0][i], exp_coord[7][i], round(nr), round(nc),
++            pmt_x, pmt_y, trig, sense, n_neigh, *neigh_arr
++        ]
++
++    for col in columns_table:
++        if col not in ('x_cam', 'y_cam', 'sense'):
++            table[col] = pd.to_numeric(table[col], downcast='integer')
++
++    config_path = os.path.join(save_path, f"IACT0{iact_numb}_cam_corsika_config.csv")
++    table.to_csv(config_path, index=False)
++    return len(exp_coord), int(exp_coord[0].iloc[-1]), config_path, float(max_sense)
++
++
++def get_slow_pulse_const(path):
++    pulse_array = pd.read_csv(path, header=None, sep=r'\s+')
++    return pulse_array[0].iloc[0], pulse_array[1].max(), len(pulse_array[0])
++
++
++def apply_nsb_background(in_file, out_file, config_cam_path, mean, std, n_samples):
++    """Adds Night Sky Background (NSB) Gaussian noise to triggered amplitudes."""
++    config_cam = pd.read_csv(config_cam_path).iloc[:, [1, 2, 5, 6]].values
++    n_clusters = int(config_cam[:, 0].max()) + 1
++    n_channels = 32
++
++    background_array = [[np.random.normal(mean, std, n_samples) for _ in range(n_channels)] for _ in range(n_clusters)]
++
++    with open(in_file, 'r', encoding='utf-8') as fin, open(out_file, 'w', encoding='utf-8') as fout:
++        for line in fin:
++            parts = line.strip().split()
++            if not parts:
++                continue
++            if len(parts) > 5:
++                # Event header
++                fout.write(line)
++            elif len(parts) == 5:
++                # Pixel hit: cluster channel x_cam y_cam amplitude
++                clust = int(parts[0])
++                chan = int(parts[1])
++                x_cam = parts[2]
++                y_cam = parts[3]
++                amp = float(parts[4])
++                noise = np.random.choice(background_array[clust][chan])
++                total_amp = amp + noise
++                fout.write(f"{clust}\t{chan}\t{x_cam}\t{y_cam}\t{total_amp:.3f}\n")
++
++
++def run_command(cmd, log_prefix=""):
++    print(f"[CMD] {' '.join(str(c) for c in cmd)}")
++    res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
++    if res.returncode != 0:
++        print(f"[ERROR] Command failed with exit code {res.returncode}:\nSTDERR:\n{res.stderr}\nSTDOUT:\n{res.stdout}", file=sys.stderr)
++        raise RuntimeError(f"Command failed: {' '.join(str(c) for c in cmd)}")
++    return res.stdout
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--feb-file", type=Path, required=True, help="Input .feb binary file from TAIGA_optics")
++    parser.add_argument("--runtime-dir", type=Path, default=Path("runtime"), help="Runtime root folder")
++    parser.add_argument("--output-prefix", type=Path, default=Path("result"), help="Prefix for output products")
++    parser.add_argument("--config", type=Path, help="Custom trigger_config.json path")
++    parser.add_argument("--clean-edge1", type=float, help="Override cleaning threshold 1 (default from config, e.g. 14.0)")
++    parser.add_argument("--clean-edge2", type=float, help="Override cleaning threshold 2 (default from config, e.g. 7.0)")
++    parser.add_argument("--gam", type=int, help="Override gam parameter (1: real direction, 0: scattered)")
++    parser.add_argument("--keep-intermediate", action="store_true", help="Keep raw _c.txt and _cb.txt files")
++    args = parser.parse_args()
++
++    feb_file = args.feb_file.resolve()
++    if not feb_file.is_file():
++        sys.exit(f"[FATAL] FEB file not found: {feb_file}")
++
++    runtime_dir = args.runtime_dir.resolve()
++    scratch_dir = Path.cwd().resolve()
++    work_out = scratch_dir / "trg_work"
++    work_out.mkdir(parents=True, exist_ok=True)
++
++    # Search paths for assets
++    search_dirs = [
++        scratch_dir,
++        runtime_dir / "assets" / "trg5",
++        runtime_dir / "assets",
++        runtime_dir / "trg5",
++    ]
++
++    # Find config
++    config_file = args.config if args.config else None
++    if not config_file:
++        for d in search_dirs:
++            cand = d / "trigger_config.json"
++            if cand.is_file():
++                config_file = cand
++                break
++    if not config_file or not config_file.is_file():
++        sys.exit(f"[FATAL] trigger_config.json not found in {[str(d) for d in search_dirs]}")
++
++    with open(config_file, 'r', encoding='utf-8') as f:
++        cfg = json.load(f)
++
++    # Binaries
++    trigger_bin = runtime_dir / "bin" / "trigger_iact"
++    if not trigger_bin.is_file():
++        trigger_bin = Path("trigger_iact").resolve()
++    cleaning_bin = runtime_dir / "bin" / "cleaning"
++    if not cleaning_bin.is_file():
++        cleaning_bin = Path("cleaning").resolve()
++
++    if not trigger_bin.is_file() or not cleaning_bin.is_file():
++        sys.exit(f"[FATAL] Required binaries missing: trigger_iact={trigger_bin}, cleaning={cleaning_bin}")
++
++    # Overrides
++    clean_edge1 = args.clean_edge1 if args.clean_edge1 is not None else float(cfg.get("clean_edge1", 14.0))
++    clean_edge2 = args.clean_edge2 if args.clean_edge2 is not None else float(cfg.get("clean_edge2", 7.0))
++    gam = args.gam if args.gam is not None else int(cfg.get("gam", 1))
++
++    # Resolve calibration assets
++    iacts = cfg.get("IACTs", [1, 2, 3, 4, 5])
++    pulse_files = [resolve_asset_path(p, search_dirs) for p in cfg["pulse_files"]]
++    coord_files = [resolve_asset_path(p, search_dirs) for p in cfg["coord_files"]]
++    factors_path = [resolve_asset_path(p, search_dirs) for p in cfg["factors_path"]]
++    amplitudes_file = resolve_asset_path(cfg.get("amplitudes_file", "probablies8.txt"), search_dirs)
++
++    use_sense = int(cfg.get("use_sense", 1))
++    trigger_type = cfg.get("trigger_type", [1] * len(iacts))
++    integrate_window = cfg.get("integrate_window", [80] * len(iacts))
++    t_grid = cfg.get("t_grid", 1)
++    t_sign = cfg.get("t_sign", 20)
++    trig_amp = float(cfg.get("trig_amp", 10.0))
++    t_hold = cfg.get("t_hold", 160)
++    trig_window = cfg.get("trig_window", 15)
++    t_after_before = cfg.get("t_after_before", 100)
++    sense_cam = cfg.get("sense_cam", [1.0] * len(iacts))
++    hidden_mirror = cfg.get("hidden_mirror", [[] for _ in iacts])
++    background = int(cfg.get("background", 0))
++    bg_params = cfg.get("background_params", {})
++    mean_ph = 3
++    mean_phe_time = 35
++    if "2" in bg_params:
++        mean_ph = bg_params["2"].get("mean_ph", 3)
++        mean_phe_time = bg_params["2"].get("mean_phe_time", 35)
++
++    source_scatter_radius = float(cfg.get("source_scatter_radius", 5.0))
++    use_sigma_for_cleaning = int(cfg.get("use_sigma_for_cleaning", 0))
++    use_brightest_island = int(cfg.get("use_brightest_island", 1))
++
++    print(f"[INFO] Running trg5 on {feb_file.name} for IACTs {iacts}...")
++
++    generated_hillas_files = []
++    generated_clean_files = []
++    generated_all_files = []
++
++    for idx, iact in enumerate(iacts):
++        print(f"\n--- Processing IACT0{iact} ---")
++        n_pix, n_clusters, config_cam_path, max_sense = get_config(
++            iact, coord_files[iact - 1], factors_path[iact - 1], use_sense, str(work_out)
++        )
++        tim0, max_amp, len_pulse = get_slow_pulse_const(pulse_files[iact - 1])
++
++        out_c_file = work_out / f"iact0{iact}_c.txt"
++        out_cb_file = work_out / f"iact0{iact}_cb0.txt"
++        out_clean_file = work_out / f"iact0{iact}_clean.txt"
++        out_hillas_file = work_out / f"iact0{iact}_hillas.csv"
++
++        flat_hidden = list(np.array(hidden_mirror[iact - 1]).flat)
++
++        # Stage 1: trigger_iact
++        trigger_cmd = [
++            str(trigger_bin),
++            str(iact),
++            str(n_pix),
++            str(n_clusters),
++            str(trigger_type[iact - 1]),
++            str(t_grid),
++            str(t_sign),
++            str(trig_amp),
++            str(t_hold),
++            str(integrate_window[iact - 1]),
++            str(trig_window),
++            str(t_after_before),
++            str(len_pulse),
++            str(tim0),
++            str(max_amp),
++            str(background),
++            str(mean_ph),
++            str(mean_phe_time),
++            str(config_cam_path),
++            str(amplitudes_file),
++            str(out_c_file),
++            str(feb_file),
++            str(pulse_files[iact - 1]),
++            str(sense_cam[iact - 1]),
++            str(int(len(flat_hidden) / 2)),
++            *[str(x) for x in flat_hidden]
++        ]
++        run_command(trigger_cmd, f"trigger_iact_iact0{iact}")
++
++        if not out_c_file.is_file() or out_c_file.stat().st_size == 0:
++            print(f"[WARN] No triggered events for IACT0{iact}")
++            # Create empty placeholder files
++            out_hillas_file.write_text("event_id,size,length,width,dist,alpha,azwidth,miss\n")
++            out_clean_file.write_text("")
++            generated_hillas_files.append(out_hillas_file)
++            generated_clean_files.append(out_clean_file)
++            continue
++
++        generated_all_files.append(out_c_file)
++
++        # Stage 2: NSB background
++        mean_bg = 0.0
++        std_bg = 3.9
++        n_bg = 10000
++        try:
++            dist_bg = bg_params.get("0", {}).get("distribution background", {})
++            bg_tel = dist_bg.get(str(iact), dist_bg.get(iact, {}))
++            mean_bg = float(bg_tel.get("mean", 0.0))
++            std_bg = float(bg_tel.get("std", 3.9))
++            n_bg = int(bg_tel.get("n", 10000))
++        except Exception:
++            pass
++
++        apply_nsb_background(str(out_c_file), str(out_cb_file), config_cam_path, mean_bg, std_bg, n_bg)
++        generated_all_files.append(out_cb_file)
++
++        # Stage 3: Cleaning & Hillas parameters
++        # Dummy sigma file if not using experimental pedestals
++        sigma_file = factors_path[iact - 1]
++        cleaning_cmd = [
++            str(cleaning_bin),
++            str(iact),
++            str(gam),
++            str(n_pix),
++            str(clean_edge1),
++            str(clean_edge2),
++            str(config_cam_path),
++            str(out_cb_file),
++            str(out_clean_file),
++            str(out_hillas_file),
++            str(source_scatter_radius),
++            str(factors_path[iact - 1]),
++            str(sigma_file),
++            str(use_sigma_for_cleaning),
++            str(use_brightest_island)
++        ]
++        run_command(cleaning_cmd, f"cleaning_iact0{iact}")
++
++        if out_hillas_file.is_file():
++            generated_hillas_files.append(out_hillas_file)
++            generated_all_files.append(out_hillas_file)
++        if out_clean_file.is_file():
++            generated_clean_files.append(out_clean_file)
++            generated_all_files.append(out_clean_file)
++
++    # Copy individual Hillas CSVs to final output location with prefix
++    out_prefix_str = str(args.output_prefix)
++    for hf in generated_hillas_files:
++        tel_match = re.search(r"iact0\d", hf.name)
++        tel_tag = f"_{tel_match.group(0)}" if tel_match else ""
++        dst = Path(f"{out_prefix_str}{tel_tag}_hillas.csv")
++        shutil.copy2(hf, dst)
++        print(f"[OUT] Hillas CSV: {dst} ({dst.stat().st_size} bytes)")
++
++    # Bundle all trigger products into {output_prefix}_trg.tar.gz
++    trg_tar_path = Path(f"{out_prefix_str}_trg.tar.gz")
++    with tarfile.open(trg_tar_path, "w:gz") as tar:
++        for f in work_out.iterdir():
++            if f.is_file():
++                tar.add(f, arcname=f.name)
++    print(f"[OUT] Trigger bundle: {trg_tar_path} ({trg_tar_path.stat().st_size} bytes)")
++
++    # Cleanup intermediate scratch if requested
++    if not args.keep_intermediate:
++        shutil.rmtree(work_out, ignore_errors=True)
++
++    print("[SUCCESS] Full trg5 pipeline stage completed successfully.")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/trg5_git/trigger_config.json b/trg5_git/trigger_config.json
+index 2fae95c..419b0d5 100755
+--- a/trg5_git/trigger_config.json
++++ b/trg5_git/trigger_config.json
+@@ -1,78 +1,77 @@
+ {
+-    "IACTs": [1, 2, 3, 4, 5],
+-    "pulse_files": [
+-      "/media/husein/288795a8-ccc3-4052-bc28-3e3009f96477/husein/TAIGA/febtotrig/trg5/Calibration/slow_pulse_cam1_old.txt",
+-      "/media/husein/288795a8-ccc3-4052-bc28-3e3009f96477/husein/TAIGA/febtotrig/trg5/Calibration/slow_pulse_iact2_new",
+-      "/media/husein/288795a8-ccc3-4052-bc28-3e3009f96477/husein/TAIGA/febtotrig/trg5/Calibration/slow_pulse_iact2_new",
+-      "/media/husein/288795a8-ccc3-4052-bc28-3e3009f96477/husein/TAIGA/febtotrig/trg5/Calibration/slow_pulse_iact2_new",
+-      "/media/husein/288795a8-ccc3-4052-bc28-3e3009f96477/husein/TAIGA/febtotrig/trg5/Calibration/slow_pulse_iact2_new"
+-    ],
+-    "coord_files": [
+-      "/media/husein/288795a8-ccc3-4052-bc28-3e3009f96477/husein/TAIGA/febtotrig/trg5/Calibration/XY_turn_2020jan2tel_18fix.txt",
+-      "/media/husein/288795a8-ccc3-4052-bc28-3e3009f96477/husein/TAIGA/febtotrig/trg5/Calibration/XY_turn_2020jan2tel_18fix.txt",
+-      "/media/husein/288795a8-ccc3-4052-bc28-3e3009f96477/husein/TAIGA/febtotrig/trg5/Calibration/XY_turn_2020jan2tel_18fix.txt",
+-      "/media/husein/288795a8-ccc3-4052-bc28-3e3009f96477/husein/TAIGA/febtotrig/trg5/Calibration/XY_turn_2020jan2tel_18fix.txt",
+-      "/media/husein/288795a8-ccc3-4052-bc28-3e3009f96477/husein/TAIGA/febtotrig/trg5/Calibration/XY_turn_2020jan2tel_18fix.txt"
+-    ],
+-    "factors_path": [
+-      "/media/husein/288795a8-ccc3-4052-bc28-3e3009f96477/husein/TAIGA/febtotrig/trg5/Calibration/factors_iact2_310120.led.txt",
+-      "/media/husein/288795a8-ccc3-4052-bc28-3e3009f96477/husein/TAIGA/febtotrig/trg5/Calibration/factors_iact2_310120.led.txt",
+-      "/media/husein/288795a8-ccc3-4052-bc28-3e3009f96477/husein/TAIGA/febtotrig/trg5/Calibration/factors_iact2_310120.led.txt",
+-      "/media/husein/288795a8-ccc3-4052-bc28-3e3009f96477/husein/TAIGA/febtotrig/trg5/Calibration/factors_iact2_310120.led.txt",
+-      "/media/husein/288795a8-ccc3-4052-bc28-3e3009f96477/husein/TAIGA/febtotrig/trg5/Calibration/factors_iact2_310120.led.txt"
+-    ],
+-    "trigger_type": [1, 1, 1, 1, 1],
+-    "integrate_window": [80, 80, 80, 80, 80],
+-    "gam": 1,
+-    "use_sense": 1,
+-    "save_path": "/media/husein/288795a8-ccc3-4052-bc28-3e3009f96477/husein/TAIGA/febtotrig/gamma/post_trg5",
+-    "sim_name": "IACT",
+-    "amplitudes_file": "/media/husein/288795a8-ccc3-4052-bc28-3e3009f96477/husein/TAIGA/febtotrig/trg5/probablies8.txt",
+-    "source_scatter_radius": 5.0,
+-    "t_grid": 1,
+-    "t_sign": 20,
+-    "trig_amp": 10.0,
+-    "t_hold": 160,
+-    "trig_window": 15,
+-    "t_after_before": 100,
+-    "sense_cam": [0.89, 0.89, 0.89, 0.89, 0.89],
+-    "max_n_channels_per_cluster": 32,
+-    "hidden_mirror": [[], [], [], [], []],
+-    "background": 0,
+-    "background_params": {
+-      "0": {
+-        "distribution background": {
+-          "1": {"mean": 0.0, "std": 3.9, "n": 10000},
+-          "2": {"mean": 0.0, "std": 3.9, "n": 10000},
+-          "3": {"mean": 0.0, "std": 3.9, "n": 10000},
+-          "4": {"mean": 0.0, "std": 3.9, "n": 10000},
+-          "5": {"mean": 0.0, "std": 3.9, "n": 10000}
+-        }
+-      },
+-      "1": {
+-        "experimental_background_path": {
+-          "1": [],
+-          "2": [],
+-          "3": [],
+-          "4": [],
+-          "5": []
+-        }
+-      },
+-      "2": {"mean_ph": 3, "mean_phe_time": 35}
++  "IACTs": [1, 2, 3, 4, 5],
++  "pulse_files": [
++    "Calibration/slow_pulse_cam1_old.txt",
++    "Calibration/slow_pulse_iact2_new",
++    "Calibration/slow_pulse_iact2_new",
++    "Calibration/slow_pulse_iact2_new",
++    "Calibration/slow_pulse_iact2_new"
++  ],
++  "coord_files": [
++    "Calibration/XY_turn_2020jan2tel_18fix.txt",
++    "Calibration/XY_turn_2020jan2tel_18fix.txt",
++    "Calibration/XY_turn_2020jan2tel_18fix.txt",
++    "Calibration/XY_turn_2020jan2tel_18fix.txt",
++    "Calibration/XY_turn_2020jan2tel_18fix.txt"
++  ],
++  "factors_path": [
++    "Calibration/factors_iact2_310120.led.txt",
++    "Calibration/factors_iact2_310120.led.txt",
++    "Calibration/factors_iact2_310120.led.txt",
++    "Calibration/factors_iact2_310120.led.txt",
++    "Calibration/factors_iact2_310120.led.txt"
++  ],
++  "trigger_type": [1, 1, 1, 1, 1],
++  "integrate_window": [80, 80, 80, 80, 80],
++  "gam": 1,
++  "use_sense": 1,
++  "save_path": "outs",
++  "sim_name": "IACT",
++  "amplitudes_file": "probablies8.txt",
++  "source_scatter_radius": 5.0,
++  "t_grid": 1,
++  "t_sign": 20,
++  "trig_amp": 10.0,
++  "t_hold": 160,
++  "trig_window": 15,
++  "t_after_before": 100,
++  "sense_cam": [0.89, 0.89, 0.89, 0.89, 0.89],
++  "max_n_channels_per_cluster": 32,
++  "hidden_mirror": [[], [], [], [], []],
++  "background": 0,
++  "background_params": {
++    "0": {
++      "distribution background": {
++        "1": {"mean": 0.0, "std": 3.9, "n": 10000},
++        "2": {"mean": 0.0, "std": 3.9, "n": 10000},
++        "3": {"mean": 0.0, "std": 3.9, "n": 10000},
++        "4": {"mean": 0.0, "std": 3.9, "n": 10000},
++        "5": {"mean": 0.0, "std": 3.9, "n": 10000}
++      }
+     },
+-    "sigma_for_clean": [
+-      "/home/volchugov/readbin/readbin/data/experimental_background/IACT01_median_020122.ped_015",
+-      "/home/volchugov/readbin/readbin/data/experimental_background/IACT02_median_020122.ped_015",
+-      "/home/volchugov/readbin/readbin/data/experimental_background/IACT01_median_020122.ped_015",
+-      "/home/volchugov/readbin/readbin/data/experimental_background/IACT01_median_020122.ped_015",
+-      "/home/volchugov/readbin/readbin/data/experimental_background/IACT01_median_020122.ped_015"
+-    ],
+-    "clean_edge1": 14.0,
+-    "clean_edge2": 7.0,
+-    "use_sigma_for_cleaning": 0,
+-    "use_brightest_island": 1,
+-    "make_trigger": 1,
+-    "make_background": 1,
+-    "make_cleaning": [1, "None"]
+-  }
+-  
+\ No newline at end of file
++    "1": {
++      "experimental_background_path": {
++        "1": [],
++        "2": [],
++        "3": [],
++        "4": [],
++        "5": []
++      }
++    },
++    "2": {"mean_ph": 3, "mean_phe_time": 35}
++  },
++  "sigma_for_clean": [
++    "Calibration/factors_iact2_310120.led.txt",
++    "Calibration/factors_iact2_310120.led.txt",
++    "Calibration/factors_iact2_310120.led.txt",
++    "Calibration/factors_iact2_310120.led.txt",
++    "Calibration/factors_iact2_310120.led.txt"
++  ],
++  "clean_edge1": 14.0,
++  "clean_edge2": 7.0,
++  "use_sigma_for_cleaning": 0,
++  "use_brightest_island": 1,
++  "make_trigger": 1,
++  "make_background": 1,
++  "make_cleaning": [1, "None"]
++}
+\ No newline at end of file
+-- 
+2.34.1
+

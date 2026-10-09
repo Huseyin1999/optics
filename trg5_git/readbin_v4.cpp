@@ -13,11 +13,43 @@
 #include <map>
 #include <omp.h>
 #include <math.h>
+#ifdef USE_GSL
+#include <gsl/gsl_spline.h>
+struct AkimaInterp {
+	gsl_interp_accel *acc{nullptr};
+	gsl_spline *spline{nullptr};
+	double x_min{0}, x_max{0};
+
+	void SetData(const std::vector<double>& vx, const std::vector<double>& vy) {
+		if (spline) { gsl_spline_free(spline); spline = nullptr; }
+		if (acc) { gsl_interp_accel_free(acc); acc = nullptr; }
+		if (vx.size() < 5) return;
+		x_min = vx.front();
+		x_max = vx.back();
+		acc = gsl_interp_accel_alloc();
+		spline = gsl_spline_alloc(gsl_interp_akima, vx.size());
+		gsl_spline_init(spline, vx.data(), vy.data(), vx.size());
+	}
+
+	double Eval(double x) const {
+		if (!spline) return 0.0;
+		if (x < x_min || x > x_max) return 0.0;
+		return gsl_spline_eval(spline, x, acc);
+	}
+
+	~AkimaInterp() {
+		if (spline) gsl_spline_free(spline);
+		if (acc) gsl_interp_accel_free(acc);
+	}
+};
+AkimaInterp inter;
+#else
 #include "Math/Interpolator.h"
+ROOT::Math::Interpolator inter(ROOT::Math::Interpolation::kAKIMA_PERIODIC);
+#endif
 using namespace std;
 FILE *f5;
 string line;
-ROOT::Math::Interpolator inter(ROOT::Math::Interpolation::kAKIMA_PERIODIC);
 typedef pair <int, int> type_key;
 map <type_key, int> Mapa;
 //double fy = 0, fb = 1, fa = 6., fx = 0, fc = 2.03, fd = 2.5;

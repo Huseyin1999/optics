@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+build/
+TAIGA_optics_file
+logs/
+*_jobs.tsv

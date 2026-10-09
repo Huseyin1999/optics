@@ -1,0 +1,231 @@
+Файл parameters.txt скопирован в /media/husein/288795a8-ccc3-4052-bc28-3e3009f96477/husein/TAIGA/febtotrig/gamma/bpe1_33_da5.0_md5_trg5/IACT
+Файл config.txt скопирован в /media/husein/288795a8-ccc3-4052-bc28-3e3009f96477/husein/TAIGA/febtotrig/gamma/bpe1_33_da5.0_md5_trg5/IACT
+/media/husein/288795a8-ccc3-4052-bc28-3e3009f96477/husein/TAIGA/febtotrig/gamma/bpe1_33_da5.0_md5_trg5/IACT/IACT05_cam_corsica_config.csv
+/media/husein/288795a8-ccc3-4052-bc28-3e3009f96477/husein/TAIGA/febtotrig/gamma/bpe1_33_da5.0_md5_trg5/IACT/IACT04_cam_corsica_config.csv
+/media/husein/288795a8-ccc3-4052-bc28-3e3009f96477/husein/TAIGA/febtotrig/gamma/bpe1_33_da5.0_md5_trg5/IACT/IACT03_cam_corsica_config.csv
+/media/husein/288795a8-ccc3-4052-bc28-3e3009f96477/husein/TAIGA/febtotrig/gamma/bpe1_33_da5.0_md5_trg5/IACT/IACT02_cam_corsica_config.csv
+/media/husein/288795a8-ccc3-4052-bc28-3e3009f96477/husein/TAIGA/febtotrig/gamma/bpe1_33_da5.0_md5_trg5/IACT/IACT01_cam_corsica_config.csv
+/media/husein/288795a8-ccc3-4052-bc28-3e3009f96477/husein/TAIGA/febtotrig/trg5/Calibration/slow_pulse_iact2_new
+/media/husein/288795a8-ccc3-4052-bc28-3e3009f96477/husein/TAIGA/febtotrig/trg5/Calibration/slow_pulse_iact2_new
+/media/husein/288795a8-ccc3-4052-bc28-3e3009f96477/husein/TAIGA/febtotrig/trg5/Calibration/slow_pulse_iact2_new
+/media/husein/288795a8-ccc3-4052-bc28-3e3009f96477/husein/TAIGA/febtotrig/trg5/Calibration/slow_pulse_iact2_new
+/media/husein/288795a8-ccc3-4052-bc28-3e3009f96477/husein/TAIGA/febtotrig/trg5/Calibration/slow_pulse_cam1_old.txt
+-50	1	
+-50	1	
+-50	1	
+-40	60	
+-40	60	
+-30	255	
+-40	60	
+-30	255	
+-20	424	
+-30	255	
+-20	424	
+-10	510	
+-50	1	
+-20	424	
+-10	0	
+-10	510	
+0	539	
+-40	60	
+-10	510	
+0	2	
+0	539	
+10	538	
+-30	255	
+0	539	
+10	71	
+10	538	
+20	515	
+-20	424	
+10	538	
+20	498	
+20	515	
+30	477	
+-10	510	
+20	515	
+27	727	
+30	477	
+40	431	
+0	539	
+30	477	
+28	750	
+40	431	
+50	378	
+10	538	
+40	431	
+29	772	
+50	378	
+60	327	
+20	515	
+50	378	
+30	791	
+60	327	
+70	275	
+30	477	
+60	327	
+31	803	
+70	275	
+80	226	
+40	431	
+70	275	
+32	824	
+80	226	
+90	182	
+50	378	
+80	226	
+33	830	
+90	182	
+100	139	
+60	327	
+90	182	
+34	841	
+100	139	
+110	99	
+70	275	
+100	139	
+35	850	
+110	99	
+36	857	
+120	63	
+80	226	
+110	99	
+120	63	
+37	862	
+130	31	
+90	182	
+120	63	
+130	31	
+38	866	
+140	3	
+100	139	
+130	31	
+140	3	
+39	867	
+150	-22	
+110	99	
+140	3	
+150	-22	
+40	868	
+250	-137	
+120	63	
+150	-22	
+250	-137	
+41	864	
+300	-141	
+130	31	
+250	-137	
+300	-141	
+42	859	
+350	-130	
+43	854	
+140	3	
+300	-141	
+350	-130	
+400	-113	
+44	846	
+150	-22	
+350	-130	
+400	-113	
+450	-95	
+45	838	
+250	-137	
+400	-113	
+450	-95	
+500	-77	
+46	828	
+300	-141	
+450	-95	
+500	-77	
+550	-61	
+47	817	
+350	-130	
+48	804	
+500	-77	
+49	790	
+550	-61	
+600	-48	
+400	-113	
+550	-61	
+50	775	
+600	-48	
+650	-38	
+450	-95	
+600	-48	
+51	762	
+650	-38	
+700	-29	
+500	-77	
+650	-38	
+60	596	
+700	-29	
+900	-10	
+550	-61	
+700	-29	
+70	401	
+900	-10	
+600	-48	
+1100	-3	
+900	-10	
+80	222	
+650	-38	
+1100	-3	
+1300	0	
+1100	-3	
+700	-29	
+1300	0	
+90	78	
+1300	0	
+900	-10	
+100	-35	
+1100	-3	
+110	-124	
+1300	0	
+120	-191	
+130	-227	
+ok
+ok
+ok
+140	-250	
+getting vector of phe amps
+getting vector of phe amps
+getting vector of phe amps
+150	-256	
+ok
+160	-258	
+getting vector of phe amps
+170	-252	
+180	-248	
+190	-236	
+200	-220	
+210	-202	
+220	-187	
+230	-171	
+240	-157	
+250	-136	
+260	-125	
+270	-109	
+280	-100	
+290	-88	
+300	-78	
+310	-68	
+320	-62	
+330	-51	
+340	-50	
+350	-40	
+360	-35	
+370	-29	
+380	-26	
+390	-25	
+400	-22	
+420	-18	
+440	-14	
+460	-8	
+480	-8	
+500	-7	
+540	-4	
+560	-4	
+600	-1	
+640	-3	
+ok
+getting vector of phe amps

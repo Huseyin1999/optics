@@ -1,0 +1,77 @@
+{
+  "IACTs": [1, 2, 3, 4, 5],
+  "pulse_files": [
+    "/k38/taiga_pool/iact_trigger/launch/Calibration/slow_pulse_iact2_new",
+    "/k38/taiga_pool/iact_trigger/launch/Calibration/slow_pulse_iact2_new",
+    "/k38/taiga_pool/iact_trigger/launch/Calibration/slow_pulse_iact2_new",
+    "/k38/taiga_pool/iact_trigger/launch/Calibration/slow_pulse_iact2_new",
+    "/k38/taiga_pool/iact_trigger/launch/Calibration/slow_pulse_iact2_new"
+  ],
+  "coord_files": [
+    "/k38/taiga_pool/iact_trigger/launch/Calibration/XY_turn_2020jan2tel_18fix.txt",
+    "/k38/taiga_pool/iact_trigger/launch/Calibration/XY_turn_2020jan2tel_18fix.txt",
+    "/k38/taiga_pool/iact_trigger/launch/Calibration/XY_turn_2020jan2tel_18fix.txt",
+    "/k38/taiga_pool/iact_trigger/launch/Calibration/XY_turn_2020jan2tel_18fix.txt",
+    "/k38/taiga_pool/iact_trigger/launch/Calibration/XY_turn_2020jan2tel_18fix.txt"
+  ],
+  "factors_path": [
+    "/k38/taiga_pool/iact_trigger/launch/Calibration/factors_iact2_310120.led.txt",
+    "/k38/taiga_pool/iact_trigger/launch/Calibration/factors_iact2_310120.led.txt",
+    "/k38/taiga_pool/iact_trigger/launch/Calibration/factors_iact2_310120.led.txt",
+    "/k38/taiga_pool/iact_trigger/launch/Calibration/factors_iact2_310120.led.txt",
+    "/k38/taiga_pool/iact_trigger/launch/Calibration/factors_iact2_310120.led.txt"
+  ],
+  "trigger_type": [1, 1, 1, 1, 1],
+  "integrate_window": [80, 80, 80, 80, 80],
+  "gam": 1,
+  "use_sense": 0,
+  "save_path": "/k38/taiga_pool/iact_trigger/trg5/outs/LG",
+  "sim_name": "standard",
+  "amplitudes_file": "/k38/taiga_pool/iact_trigger/source/probablies8.txt",
+  "source_scatter_radius": 5.0,
+  "t_grid": 1,
+  "t_sign": 20,
+  "trig_amp": 10.0,
+  "t_hold": 160,
+  "trig_window": 15,
+  "t_after_before": 100,
+  "sense_cam": [1.0, 1.0, 1.0, 1.0, 1.0],
+  "max_n_channels_per_cluster": 32,
+  "hidden_mirror": [[], [], [], [], []],
+  "background": 0,
+  "background_params": {
+    "0": {
+      "distribution background": {
+        "1": {"mean": 0.0, "std": 3.9, "n": 10000},
+        "2": {"mean": 0.0, "std": 3.9, "n": 10000},
+        "3": {"mean": 0.0, "std": 3.9, "n": 10000},
+        "4": {"mean": 0.0, "std": 3.9, "n": 10000},
+        "5": {"mean": 0.0, "std": 3.9, "n": 10000}
+      }
+    },
+    "1": {
+      "experimental_background_path": {
+        "1": [],
+        "2": [],
+        "3": [],
+        "4": [],
+        "5": []
+      }
+    },
+    "2": {"mean_ph": 3, "mean_phe_time": 35}
+  },
+  "sigma_for_clean": [
+    "/home/volchugov/readbin/readbin/data/experimental_background/IACT01_median_020122.ped_015",
+    "/home/volchugov/readbin/readbin/data/experimental_background/IACT02_median_020122.ped_015",
+    "/home/volchugov/readbin/readbin/data/experimental_background/IACT01_median_020122.ped_015",
+    "/home/volchugov/readbin/readbin/data/experimental_background/IACT01_median_020122.ped_015",
+    "/home/volchugov/readbin/readbin/data/experimental_background/IACT01_median_020122.ped_015"
+  ],
+  "clean_edge1": 14.0,
+  "clean_edge2": 7.0,
+  "use_sigma_for_cleaning": 0,
+  "use_brightest_island": 1,
+  "make_trigger": 1,
+  "make_background": 1,
+  "make_cleaning": [1, "None"]
+}
